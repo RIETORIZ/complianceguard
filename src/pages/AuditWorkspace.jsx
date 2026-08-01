@@ -6,9 +6,15 @@ import { StatusBadge } from "@/components/compliance/StatusBadge";
 import { ImportSpreadsheetModal } from "@/components/ImportSpreadsheetModal";
 import { ChevronRight, Plus, Upload, X, FileText, Link2, CheckCircle2, AlertTriangle, MessageSquare, FileX, RefreshCw, ShieldCheck, History } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/AuthContext";
+import { hasPermission } from "@/lib/access-control";
 
 export default function AuditWorkspace() {
   const { id } = useParams();
+  const { user } = useAuth();
+  const canManageAudit = hasPermission(user, "audits_manage");
+  const canSubmitEvidence = hasPermission(user, "evidence_submit");
+  const canReviewEvidence = hasPermission(user, "evidence_review");
   const [audit, setAudit] = useState(null);
   const [controls, setControls] = useState([]);
   const [requests, setRequests] = useState([]);
@@ -16,6 +22,13 @@ export default function AuditWorkspace() {
   const [owners, setOwners] = useState([]);
   const [domains, setDomains] = useState([]);
   const [frameworkControls, setFrameworkControls] = useState([]);
+  const [expectedEvidence, setExpectedEvidence] = useState([]);
+  const [conditions, setConditions] = useState([]);
+  const [orgUnits, setOrgUnits] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [sites, setSites] = useState([]);
+  const [systems, setSystems] = useState([]);
+  const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedControl, setExpandedControl] = useState(null);
   const [showAddControl, setShowAddControl] = useState(false);
@@ -25,18 +38,25 @@ export default function AuditWorkspace() {
 
   const load = async () => {
     try {
-      const [a, ac, o, d, fc] = await Promise.all([
+      const [a, ac, o, d, fc, ee, ec, ou, og, st, sy] = await Promise.all([
         base44.entities.Audit.get(id),
         base44.entities.AuditControl.filter({ audit_id: id }),
-        base44.entities.Owner.list("-created_date", 200),
-        base44.entities.Domain.list("-created_date", 500),
-        base44.entities.Control.list("-created_date", 500),
+        base44.entities.Owner.list("full_name", 500),
+        base44.entities.Domain.list("name", 500),
+        base44.entities.Control.list("control_number", 1000),
+        base44.entities.ExpectedEvidence.list("name", 1000),
+        base44.entities.EvidenceCondition.list("name", 2000),
+        base44.entities.OrgUnit.list("name", 500),
+        base44.entities.OwnerGroup.list("name", 500),
+        base44.entities.Site.list("name", 500),
+        base44.entities.System.list("name", 500),
       ]);
-      setAudit(a); setControls(ac); setOwners(o); setDomains(d); setFrameworkControls(fc);
+      setAudit(a); setControls(ac); setOwners(o); setDomains(d); setFrameworkControls(fc); setExpectedEvidence(ee); setConditions(ec); setOrgUnits(ou); setGroups(og); setSites(st); setSystems(sy);
       const reqs = await base44.entities.EvidenceRequest.filter({ audit_id: id });
       setRequests(reqs);
       const subs = await base44.entities.EvidenceSubmission.filter({ evidence_request_id: { $in: reqs.map((r) => r.id) } });
       setSubmissions(subs);
+      if (subs.length) setMappings(await base44.entities.EvidenceMapping.filter({ evidence_submission_id: { $in: subs.map((s) => s.id) } })); else setMappings([]);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -49,7 +69,7 @@ export default function AuditWorkspace() {
 
   const addCustomControl = async (title, number, text) => {
     const ctrl = await base44.entities.Control.create({
-      framework_id: audit.framework_id, title, control_number: number || "", official_text: text, control_type: "custom", is_custom: true, priority: "medium", active: true,
+      framework_id: audit.framework_id || "", title, control_number: number || "", official_text: "", custom_requirement_text: text, control_type: "custom", is_custom: true, priority: "medium", active: true,
     });
     const ac = await base44.entities.AuditControl.create({
       audit_id: id, control_id: ctrl.id, framework_id: audit.framework_id, control_number: number || "", control_title: title, compliance_status: "Under Evaluation",
@@ -63,7 +83,7 @@ export default function AuditWorkspace() {
     const fc = frameworkControls.find((c) => c.id === controlId);
     if (!fc) return;
     const ac = await base44.entities.AuditControl.create({
-      audit_id: id, control_id: fc.id, framework_id: audit.framework_id, domain_id: fc.domain_id, control_number: fc.control_number, control_title: fc.title, compliance_status: "Under Evaluation",
+      audit_id: id, control_id: fc.id, framework_id: fc.framework_id, domain_id: fc.domain_id, control_number: fc.control_number, control_title: fc.title, compliance_status: "Under Evaluation",
     });
     await logAudit({ action: "control_added", recordType: "AuditControl", recordId: ac.id, recordName: fc.title, newValue: ac });
     load();
