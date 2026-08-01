@@ -22,11 +22,14 @@ Every response exposes:
 - **BridgeEvidenceMapping** — `EvidenceMapping`
 - **FactFinding** — `Finding`
 - **FactCorrectionPlan** — `CorrectionPlan`
-- **FactStatusActivity** — `AuditTrail` or normalized status histories
-- **FactComplianceSnapshot** — `ComplianceSnapshot` when added to the export catalog for historical trend extraction
+- **FactStatusActivity** — `status_histories` normalized reporting dataset
+- **FactComplianceSnapshot** — `ComplianceSnapshot` for historical trend extraction
 
 ### Dimension tables
 
+- **DimAuditType** — `audit_types` reporting lookup
+- **DimEvidenceStatus** — `evidence_statuses` reporting lookup
+- **DimComplianceStatus** — `compliance_statuses` reporting lookup
 - **DimAudit** — `Audit`
 - **DimFramework** — `Framework`
 - **DimDomain** — `Domain`
@@ -127,7 +130,7 @@ Closed correction plans divided by all correction plans, plus average completion
 
 ## 8. Refresh Strategy
 
-- Operational dashboards: every 30–60 minutes where justified.
+- Operational dashboards: every 30–60 minutes where justified, using `updatedSince` for incremental extraction.
 - Management dashboards: daily or several times per day.
 - Compliance snapshots: daily historical trend.
 - Large deployments: use a governed data warehouse or lakehouse staging layer rather than repeatedly extracting all operational entities.
