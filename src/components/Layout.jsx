@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
+import { Link, useLocation } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
 import { LayoutDashboard, FolderTree, Users, Flag, ClipboardList, Bell, FileText, Settings, ShieldCheck, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,9 +17,8 @@ const NAV = [
   { label: "Administration", path: "/admin", icon: Settings, permission: "admin_view" },
 ];
 
-export default function Layout() {
+export default function Layout({ children }) {
   const location = useLocation();
-  const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [user, setUser] = useState(null);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -121,7 +120,7 @@ export default function Layout() {
           </Link>
         </header>
         <main className="flex-1 p-4 lg:p-8">
-          <Outlet />
+          {children}
         </main>
       </div>
     </div>
