@@ -62,7 +62,7 @@ export function ImportSpreadsheetModal({ auditId, audit, owners, onClose, onDone
         const text = await selected.text();
         matrix = parseCsv(text);
       } else {
-        matrix = /** @type {any[][]} */ (await readXlsxFile(selected));
+        matrix = /** @type {any[][]} */ (/** @type {unknown} */ (await readXlsxFile(selected)));
       }
       if (!matrix?.length || matrix.length < 2) throw new Error("No data rows were found in the first worksheet.");
       const headers = matrix[0].map((value, index) => String(value || `Column ${index + 1}`).trim());
