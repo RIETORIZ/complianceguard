@@ -1,5 +1,6 @@
 {
-  "name": "Untitled",
+  "name": "Compliance Management Tool",
+  "description": "Evidence-driven enterprise compliance, audit, findings, corrective-action and reporting platform",
   "site": {
     "installCommand": "npm install",
     "buildCommand": "npm run build",
