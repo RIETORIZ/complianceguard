@@ -36,9 +36,10 @@ npm audit
 
 `npm run validate` executes:
 
-1. production build
-2. ESLint error gate
-3. automated tests
+1. JavaScript type checking
+2. production build
+3. ESLint error gate
+4. automated tests
 
 ## Demonstration Data
 
