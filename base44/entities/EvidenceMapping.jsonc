@@ -1,0 +1,60 @@
+{
+  "name": "EvidenceMapping",
+  "type": "object",
+  "properties": {
+    "master_evidence_id": {
+      "type": "string"
+    },
+    "evidence_submission_id": {
+      "type": "string"
+    },
+    "evidence_request_id": {
+      "type": "string"
+    },
+    "audit_control_id": {
+      "type": "string"
+    },
+    "control_id": {
+      "type": "string"
+    },
+    "mapping_type": {
+      "type": "string",
+      "enum": [
+        "primary",
+        "reuse"
+      ],
+      "default": "reuse"
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "accepted",
+        "accepted_with_observation",
+        "rejected",
+        "partially_sufficient"
+      ],
+      "default": "pending"
+    },
+    "review_comments": {
+      "type": "string"
+    },
+    "reviewed_by_id": {
+      "type": "string"
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "required": [
+    "master_evidence_id",
+    "evidence_submission_id",
+    "evidence_request_id",
+    "audit_control_id"
+  ]
+}
