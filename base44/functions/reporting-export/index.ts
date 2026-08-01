@@ -18,6 +18,7 @@ const DATASETS: Record<string, string> = {
   systems: "System",
   findings: "Finding",
   correction_plans: "CorrectionPlan",
+  audit_responses: "AuditResponse",
   notifications: "Notification",
   audit_trail: "AuditTrail",
   compliance_snapshots: "ComplianceSnapshot",
@@ -55,8 +56,8 @@ Deno.serve(async (req) => {
       incrementalKey = "";
     } else if (dataset === "status_histories") {
       entityName = "StatusHistory";
-      rows = await buildStatusHistory(admin, safeLimit, updatedSince);
-      stableKey = "event_id";
+      rows = updatedSince ? await admin.entities.StatusHistory.filter({ changed_at: { $gte: updatedSince } }, "changed_at", safeLimit) : await admin.entities.StatusHistory.list("changed_at", safeLimit);
+      stableKey = "id";
       incrementalKey = "changed_at";
     } else {
       const mappedEntity = DATASETS[dataset];
@@ -85,22 +86,3 @@ Deno.serve(async (req) => {
     return Response.json({ error: error?.message || "Internal error" }, { status: 500 });
   }
 });
-
-async function buildStatusHistory(admin: any, limit: number, updatedSince?: string) {
-  const [requests, findings] = await Promise.all([
-    admin.entities.EvidenceRequest.list("-updated_date", Math.min(limit, 5000)),
-    admin.entities.Finding.list("-updated_date", Math.min(limit, 5000)),
-  ]);
-  const rows: any[] = [];
-  for (const request of requests) {
-    for (const [index, event] of (request.status_history || []).entries()) {
-      rows.push({ event_id: `EvidenceRequest:${request.id}:${index}`, record_type: "EvidenceRequest", record_id: request.id, audit_id: request.audit_id, audit_control_id: request.audit_control_id, status: event.status, changed_by: event.changed_by || "", changed_at: event.changed_at || request.updated_date, comment: event.comment || "" });
-    }
-  }
-  for (const finding of findings) {
-    for (const [index, event] of (finding.status_history || []).entries()) {
-      rows.push({ event_id: `Finding:${finding.id}:${index}`, record_type: "Finding", record_id: finding.id, audit_id: finding.source_audit_id, audit_control_id: finding.audit_control_id, status: event.status, changed_by: event.changed_by || "", changed_at: event.changed_at || finding.updated_date, comment: event.comment || "" });
-    }
-  }
-  return rows.filter((row) => !updatedSince || row.changed_at >= updatedSince).sort((a, b) => String(a.changed_at).localeCompare(String(b.changed_at))).slice(0, limit);
-}

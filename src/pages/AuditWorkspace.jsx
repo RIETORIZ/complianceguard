@@ -1,13 +1,25 @@
 import React, { useState, useEffect } from "react";
 import { useParams, Link } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
-import { logAudit, dispatchNotification, computeOverdueStatus, EVIDENCE_STATUS_CONFIG, COMPLIANCE_STATUS_CONFIG, REVIEW_STATUS_CONFIG, isFileNameMeaningful, suggestEvidenceName, DEFAULT_EVIDENCE_CONDITIONS } from "@/lib/compliance";
+import { logAudit, recordStatusTransition, dispatchNotification, computeOverdueStatus, EVIDENCE_STATUS_CONFIG, COMPLIANCE_STATUS_CONFIG, REVIEW_STATUS_CONFIG, isFileNameMeaningful, suggestEvidenceName, DEFAULT_EVIDENCE_CONDITIONS } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
 import { ImportSpreadsheetModal } from "@/components/ImportSpreadsheetModal";
 import { ChevronRight, Plus, Upload, X, FileText, Link2, CheckCircle2, AlertTriangle, MessageSquare, FileX, RefreshCw, ShieldCheck, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/AuthContext";
 import { hasPermission } from "@/lib/access-control";
+import {
+  AUDIT_WORKFLOW_STAGES,
+  UNIFIED_AUDIT_WORKFLOW,
+  deriveAuditWorkflow,
+  isAcceptedReviewDecision,
+  isOpenFindingStatus,
+  normalizeReviewDecision,
+  normalizeFindingStatus,
+  reviewDecisionToRequestStatus,
+  validateComplianceDecision,
+  validateAuditResponseType,
+} from "@/lib/audit-workflow";
 
 export default function AuditWorkspace() {
   const { id } = useParams();
@@ -29,6 +41,9 @@ export default function AuditWorkspace() {
   const [sites, setSites] = useState([]);
   const [systems, setSystems] = useState([]);
   const [mappings, setMappings] = useState([]);
+  const [findings, setFindings] = useState([]);
+  const [correctionPlans, setCorrectionPlans] = useState([]);
+  const [responses, setResponses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedControl, setExpandedControl] = useState(null);
   const [showAddControl, setShowAddControl] = useState(false);
@@ -51,12 +66,33 @@ export default function AuditWorkspace() {
         base44.entities.Site.list("name", 500),
         base44.entities.System.list("name", 500),
       ]);
-      setAudit(a); setControls(ac); setOwners(o); setDomains(d); setFrameworkControls(fc); setExpectedEvidence(ee); setConditions(ec); setOrgUnits(ou); setGroups(og); setSites(st); setSystems(sy);
+      setControls(ac); setOwners(o); setDomains(d); setFrameworkControls(fc); setExpectedEvidence(ee); setConditions(ec); setOrgUnits(ou); setGroups(og); setSites(st); setSystems(sy);
       const reqs = await base44.entities.EvidenceRequest.filter({ audit_id: id });
       setRequests(reqs);
-      const subs = await base44.entities.EvidenceSubmission.filter({ evidence_request_id: { $in: reqs.map((r) => r.id) } });
+      const subs = reqs.length
+        ? await base44.entities.EvidenceSubmission.filter({ evidence_request_id: { $in: reqs.map((r) => r.id) } })
+        : [];
       setSubmissions(subs);
       if (subs.length) setMappings(await base44.entities.EvidenceMapping.filter({ evidence_submission_id: { $in: subs.map((s) => s.id) } })); else setMappings([]);
+      const [auditFindings, auditPlans, auditResponses] = await Promise.all([
+        base44.entities.Finding.filter({ source_audit_id: id }),
+        base44.entities.CorrectionPlan.filter({ audit_id: id }),
+        base44.entities.AuditResponse.filter({ audit_id: id }),
+      ]);
+      setFindings(auditFindings);
+      setCorrectionPlans(auditPlans);
+      setResponses(auditResponses);
+
+      const workflow = deriveAuditWorkflow({ controls: ac, requests: reqs, submissions: subs, responses: auditResponses, findings: auditFindings, correctionPlans: auditPlans });
+      const auditWorkflowUpdate = {};
+      if (a.workflow_profile !== UNIFIED_AUDIT_WORKFLOW) auditWorkflowUpdate.workflow_profile = UNIFIED_AUDIT_WORKFLOW;
+      if (Number(a.workflow_version) !== 1) auditWorkflowUpdate.workflow_version = 1;
+      if (Number(a.completion_percentage || 0) !== workflow.completionPercentage) auditWorkflowUpdate.completion_percentage = workflow.completionPercentage;
+      if (Object.keys(auditWorkflowUpdate).length && canManageAudit) {
+        try { await base44.entities.Audit.update(a.id, auditWorkflowUpdate); }
+        catch (workflowError) { console.error("Audit workflow progress could not be persisted", workflowError); }
+      }
+      setAudit({ ...a, ...auditWorkflowUpdate });
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -89,6 +125,56 @@ export default function AuditWorkspace() {
     load();
   };
 
+  const updateComplianceStatus = async (auditControl, status) => {
+    const requiresReason = status !== "Under Evaluation";
+    const reason = requiresReason ? window.prompt(`Enter the auditor evaluation reason for “${status}”.`) : "Returned to evaluation";
+    if (requiresReason && reason === null) return;
+    const controlRequests = requests.filter((request) => request.audit_control_id === auditControl.id);
+    const controlSubmissions = submissions.filter((submission) => controlRequests.some((request) => submission.evidence_request_id === request.id || (submission.linked_evidence_request_ids || []).includes(request.id)));
+    const controlExpected = expectedEvidence.filter((item) => item.control_id === auditControl.control_id);
+    const controlFindings = findings.filter((finding) => finding.audit_control_id === auditControl.id);
+    const errors = validateComplianceDecision({
+      complianceStatus: status,
+      evidenceRequests: controlRequests,
+      submissions: controlSubmissions,
+      expectedEvidence: controlExpected,
+      findings: controlFindings,
+      reason,
+    });
+    if (errors.length) return alert(`Compliance evaluation cannot be saved:\n\n${errors.join("\n")}`);
+    const previous = auditControl.compliance_status;
+    const evaluatedAt = new Date().toISOString();
+    await base44.entities.AuditControl.update(auditControl.id, {
+      compliance_status: status,
+      evaluation_reason: reason || "",
+      evaluated_at: evaluatedAt,
+      evaluated_by_id: user?.id || "",
+      is_closed: false,
+      closure_date: "",
+    });
+    await recordStatusTransition({ entityType: "AuditControl", entityId: auditControl.id, previousStatus: previous, newStatus: status, reason, auditId: audit.id, auditControlId: auditControl.id, changedAt: evaluatedAt });
+    await logAudit({ action: "compliance_evaluated", recordType: "AuditControl", recordId: auditControl.id, recordName: auditControl.control_title, previousValue: previous, newValue: status, comment: reason });
+    if (["Partially Implemented", "Not Implemented"].includes(status) && !controlFindings.some((finding) => isOpenFindingStatus(finding.status))) {
+      const finding = await base44.entities.Finding.create({
+        title: `${status}: ${auditControl.control_title}`,
+        description: reason || `Control evaluated as ${status}.`,
+        source_audit_id: audit.id,
+        source_type: "Control Testing",
+        framework_id: auditControl.framework_id || audit.framework_id,
+        control_id: auditControl.control_id,
+        audit_control_id: auditControl.id,
+        severity: status === "Not Implemented" ? "high" : "medium",
+        risk_rating: status === "Not Implemented" ? "high" : "medium",
+        owner_id: (auditControl.control_level_owners || [])[0] || "",
+        auditor_comments: reason || "",
+        status: "Draft",
+        status_history: [{ status: "Draft", changed_at: evaluatedAt, comment: "Automatically drafted from compliance evaluation" }],
+      });
+      await logAudit({ action: "finding_drafted", recordType: "Finding", recordId: finding.id, recordName: finding.title, comment: "Required by the unified workflow after a non-compliant evaluation." });
+    }
+    load();
+  };
+
   if (loading) return <div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /></div>;
   if (!audit) return <div className="text-center py-20 text-slate-500">Audit not found.</div>;
 
@@ -118,7 +204,7 @@ export default function AuditWorkspace() {
             </div>
           </div>
           {canManageAudit && <div className="flex gap-2">
-            {["Internal Audit", "Technical Assessment", "Correction Plan"].includes(audit.audit_type) && <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 text-sm border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50"><Upload className="w-4 h-4" /> Import</button>}
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 text-sm border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50"><Upload className="w-4 h-4" /> Import</button>
             <button onClick={() => setShowAddControl(true)} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg"><Plus className="w-4 h-4" /> Add Control</button>
           </div>}
         </div>
@@ -129,6 +215,8 @@ export default function AuditWorkspace() {
           <div><div className="text-[10px] uppercase text-slate-400 font-semibold">Implemented</div><div className="text-lg font-semibold text-emerald-700">{controls.filter((c) => c.compliance_status === "Implemented").length}</div></div>
         </div>
       </div>
+
+      <AuditWorkflowPanel workflow={deriveAuditWorkflow({ controls, requests, submissions, responses, findings, correctionPlans })} auditType={audit.audit_type} />
 
       {/* Drill-down: Audit → Domain → Control → Evidence */}
       <div className="bg-white rounded-xl border border-slate-200">
@@ -163,12 +251,10 @@ export default function AuditWorkspace() {
                         canManageAudit={canManageAudit} canSubmitEvidence={canSubmitEvidence} canReviewEvidence={canReviewEvidence}
                         onEvidenceSubmit={() => load()} onShowReview={(req) => setShowReview(req)}
                         onShowEvidence={(req) => setShowEvidence(req)}
-                                        onUpdateCompliance={async (status) => {
-                          const prev = ac.compliance_status;
-                          await base44.entities.AuditControl.update(ac.id, { compliance_status: status });
-                          await logAudit({ action: "status_changed", recordType: "AuditControl", recordId: ac.id, recordName: ac.control_title, previousValue: prev, newValue: status, comment: "Compliance status updated by auditor" });
-                          load();
-                        }} />
+                        auditResponses={responses.filter((response) => response.audit_control_id === ac.id)}
+                        controlFindings={findings.filter((finding) => finding.audit_control_id === ac.id)}
+                        onResponseSent={load}
+                        onUpdateCompliance={(status) => updateComplianceStatus(ac, status)} />
                     )}
                   </div>
                 );
@@ -180,7 +266,7 @@ export default function AuditWorkspace() {
       </div>
 
       {/* Add control modal */}
-      {showAddControl && <AddControlModal onClose={() => setShowAddControl(false)} onAddCustom={addCustomControl} frameworkControls={frameworkControls.filter((c) => !c.parent_id && (["Internal Audit", "Technical Assessment", "Correction Plan"].includes(audit.audit_type) || c.framework_id === audit.framework_id) && !controls.find((x) => x.control_id === c.id))} onAddExisting={addFrameworkControl} />}
+      {showAddControl && <AddControlModal onClose={() => setShowAddControl(false)} onAddCustom={addCustomControl} frameworkControls={frameworkControls.filter((c) => !c.parent_id && !controls.find((x) => x.control_id === c.id))} onAddExisting={addFrameworkControl} />}
 
       {/* Import modal */}
       {showImport && <ImportSpreadsheetModal auditId={id} audit={audit} owners={owners} onClose={() => setShowImport(false)} onDone={load} />}
@@ -189,13 +275,14 @@ export default function AuditWorkspace() {
       {showEvidence && <EvidenceUploadModal request={showEvidence} audit={audit} owners={owners} submissions={submissionsFor(showEvidence.id)} expected={expectedEvidence.find((e) => e.id === showEvidence.expected_evidence_id)} conditions={conditions.filter((c) => c.expected_evidence_id === showEvidence.expected_evidence_id && c.active !== false)} systems={systems} sites={sites} orgUnits={orgUnits} requests={requests} auditControls={controls} allSubmissions={submissions} onClose={() => setShowEvidence(null)} onDone={load} />}
 
       {/* Review modal */}
-      {showReview && <EvidenceReviewModal request={showReview} audit={audit} submission={submissionsFor(showReview.id)[0]} mappings={mappings} requests={requests} auditControls={controls} submissions={submissions} expectedEvidence={expectedEvidence} conditions={conditions} onClose={() => setShowReview(null)} onDone={load} owners={owners} />}
+      {showReview && <EvidenceReviewModal request={showReview} audit={audit} submission={submissionsFor(showReview.id)[0]} mappings={mappings} requests={requests} auditControls={controls} submissions={submissions} onClose={() => setShowReview(null)} onDone={load} owners={owners} />}
     </div>
   );
 }
 
-function ControlDetail({ audit, auditControl, requests, owners, ownerName, submissionsFor, expectedEvidence, conditions, orgUnits, groups, canManageAudit, canSubmitEvidence, canReviewEvidence, onEvidenceSubmit, onShowReview, onShowEvidence, onUpdateCompliance }) {
+function ControlDetail({ audit, auditControl, requests, owners, ownerName, submissionsFor, expectedEvidence, conditions, orgUnits, groups, canManageAudit, canSubmitEvidence, canReviewEvidence, onEvidenceSubmit, onShowReview, onShowEvidence, onUpdateCompliance, auditResponses, controlFindings, onResponseSent }) {
   const [showRequestForm, setShowRequestForm] = useState(false);
+  const [showResponseForm, setShowResponseForm] = useState(false);
   const expectedForControl = expectedEvidence.filter((item) => item.control_id === auditControl.control_id);
   return (
     <div className="px-5 py-4 bg-slate-50/30 border-t border-slate-50 space-y-3">
@@ -222,7 +309,7 @@ function ControlDetail({ audit, auditControl, requests, owners, ownerName, submi
                   <div className="text-xs text-slate-500 mt-0.5">{request.evidence_type || 'Evidence'}</div>
                   <div className="flex items-center gap-2 mt-2 flex-wrap">
                     <StatusBadge status={computeOverdueStatus(request)} config={EVIDENCE_STATUS_CONFIG} />
-                    {activeSubmission && <StatusBadge status={activeSubmission.review_status || request.review_status} config={REVIEW_STATUS_CONFIG} />}
+                    {activeSubmission && <StatusBadge status={normalizeReviewDecision(activeSubmission.review_decision || activeSubmission.review_status || request.review_decision || request.review_status)} config={REVIEW_STATUS_CONFIG} />}
                   </div>
                   <div className="text-xs text-slate-400 mt-1.5">
                     Assigned: {[...(request.assigned_owner_ids || []).map(ownerName), ...assignedGroups, ...assignedUnits].filter((value) => value && value !== '—').join(', ') || '—'} · Due: {request.due_date || '—'} · {versions.length > 0 ? `${versions.length} version(s)` : 'No submission'}
@@ -240,8 +327,22 @@ function ControlDetail({ audit, auditControl, requests, owners, ownerName, submi
         })}
         {requests.length === 0 && <div className="text-xs text-slate-400">No evidence requests yet.</div>}
       </div>
-      {canManageAudit && <button onClick={() => setShowRequestForm(true)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900"><Plus className="w-3.5 h-3.5" /> Request evidence</button>}
+      <div className="border-t border-slate-100 pt-3 space-y-2">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <div className="text-xs font-semibold text-slate-700">Formal audit response</div>
+            <div className="text-[10px] text-slate-400">Sent only after the separate compliance evaluation is recorded.</div>
+          </div>
+          {canManageAudit && auditControl.compliance_status !== "Under Evaluation" && <button onClick={() => setShowResponseForm(true)} className="text-xs border border-slate-300 px-3 py-1.5 rounded-lg hover:bg-white">Send audit response</button>}
+        </div>
+        {(auditResponses || []).sort((a, b) => String(b.sent_at || '').localeCompare(String(a.sent_at || ''))).slice(0, 2).map((response) => <div key={response.id} className="bg-white border border-slate-200 rounded-lg p-2 text-xs"><div className="font-medium">{response.response_type}</div><div className="text-slate-500">{response.required_next_action || response.auditor_comments || 'No further action stated.'}</div><div className="text-[10px] text-slate-400 mt-1">Sent {response.sent_at ? new Date(response.sent_at).toLocaleString() : '—'}</div></div>)}
+      </div>
+      <div className="flex gap-4 flex-wrap">
+        {canManageAudit && <button onClick={() => setShowRequestForm(true)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900"><Plus className="w-3.5 h-3.5" /> Request evidence</button>}
+        {controlFindings?.length > 0 && <Link to="/findings" className="text-xs text-amber-700">{controlFindings.length} linked finding(s)</Link>}
+      </div>
       {showRequestForm && <RequestForm audit={audit} auditControl={auditControl} owners={owners} expectedEvidence={expectedForControl} conditions={conditions} orgUnits={orgUnits} groups={groups} onClose={() => setShowRequestForm(false)} onDone={() => { setShowRequestForm(false); onEvidenceSubmit(); }} />}
+      {showResponseForm && <AuditResponseModal audit={audit} auditControl={auditControl} requests={requests} owners={owners} findings={controlFindings || []} onClose={() => setShowResponseForm(false)} onDone={() => { setShowResponseForm(false); onResponseSent(); }} />}
     </div>
   );
 }
@@ -281,7 +382,7 @@ function RequestForm({ audit, auditControl, owners, expectedEvidence, conditions
       const recipientIds = resolveRecipients();
       const request = await base44.entities.EvidenceRequest.create({
         audit_id: audit.id, audit_control_id: auditControl.id, control_id: auditControl.control_id, framework_id: auditControl.framework_id || audit.framework_id || '', expected_evidence_id: expectedId,
-        title: form.title, evidence_type: form.evidence_type, description: form.description, status: 'Requested', review_status: 'awaiting_review',
+        title: form.title, evidence_type: form.evidence_type, description: form.description, status: 'Requested', review_decision: 'Pending Review', review_status: 'awaiting_review',
         request_date: new Date().toISOString().slice(0, 10), due_date: form.due_date, assigned_owner_ids: recipientIds,
         assigned_group_ids: form.group_ids, assigned_sector_id: form.sector_id, assigned_department_id: form.department_id, assigned_division_id: form.division_id,
         notification_method: form.notification_method,
@@ -392,11 +493,11 @@ export function EvidenceUploadModal({ request, audit, owners, submissions, expec
     const mapping = await base44.entities.EvidenceMapping.create({
       master_evidence_id: submission.master_evidence_id, evidence_submission_id: submission.id, evidence_request_id: targetRequest.id,
       audit_control_id: targetRequest.audit_control_id, control_id: targetRequest.control_id, mapping_type: mappingType,
-      review_status: 'pending', created_at: new Date().toISOString(),
+      review_decision: 'Pending Review', review_status: 'pending', mapping_status: 'Pending', created_at: new Date().toISOString(),
     });
     const receivedAt = new Date().toISOString();
     await base44.entities.EvidenceRequest.update(targetRequest.id, {
-      status: 'Received', review_status: 'awaiting_review', submission_date: receivedAt.slice(0, 10), received_date: receivedAt,
+      status: 'Received', review_decision: 'Pending Review', review_status: 'awaiting_review', submission_date: receivedAt.slice(0, 10), received_date: receivedAt,
       status_history: [...(targetRequest.status_history || []), { status: 'Received', changed_by: 'auditee', changed_at: receivedAt, comment: mappingType === 'reuse' ? `Master evidence ${submission.master_evidence_id} reused` : 'Evidence submitted' }],
     });
     return mapping;
@@ -439,7 +540,7 @@ export function EvidenceUploadModal({ request, audit, owners, submissions, expec
         version: newVersion, is_active_version: !approvedActiveExists, upload_date: receivedAt, received_date: receivedAt,
         effective_date: metadata.effective_date, review_date: metadata.review_date, expiry_date: metadata.expiry_date, evidence_date: metadata.evidence_date,
         document_version: metadata.document_version, approving_authority: metadata.approving_authority, change_description: metadata.change_description,
-        approval_status: 'pending', review_status: 'awaiting_review', validity_status: 'Under Review', malware_scan_status: 'pending',
+        approval_status: 'pending', review_decision: 'Pending Review', review_status: 'awaiting_review', validity_status: 'Under Review', malware_scan_status: 'pending',
         confidentiality_classification: metadata.confidentiality_classification, owner_id: metadata.owner_id,
         responsible_department_id: metadata.responsible_department_id, related_system_id: metadata.related_system_id, related_asset: metadata.related_asset, related_site_id: metadata.related_site_id,
         linked_audit_control_ids: [request.audit_control_id, ...targetRequests.map((target) => target.audit_control_id)],
@@ -449,7 +550,7 @@ export function EvidenceUploadModal({ request, audit, owners, submissions, expec
       for (const targetRequest of targetRequests) await createReuseMapping({ submission, targetRequest, mappingType: 'reuse' });
       const requestStatus = mandatoryPassed ? 'Received' : 'Partially Received';
       await base44.entities.EvidenceRequest.update(request.id, {
-        status: requestStatus, review_status: 'awaiting_review', submission_date: receivedAt.slice(0, 10), received_date: receivedAt,
+        status: requestStatus, review_decision: 'Pending Review', review_status: 'awaiting_review', submission_date: receivedAt.slice(0, 10), received_date: receivedAt,
         status_history: [...(request.status_history || []), { status: requestStatus, changed_by: 'auditee', changed_at: receivedAt, comment: mandatoryPassed ? 'Complete evidence submitted' : 'Evidence submitted with mandatory checklist gaps' }],
       });
       await logAudit({ action: 'evidence_uploaded', recordType: 'EvidenceSubmission', recordId: submission.id, recordName: metadata.display_title, newValue: submission });
@@ -483,23 +584,50 @@ export function EvidenceUploadModal({ request, audit, owners, submissions, expec
   );
 }
 
-function EvidenceReviewModal({ request, audit, submission, mappings, requests, auditControls, submissions, expectedEvidence, conditions, onClose, onDone, owners }) {
+function EvidenceReviewModal({ request, audit, submission, mappings, requests, auditControls, submissions, onClose, onDone, owners }) {
   const [comments, setComments] = useState(submission?.review_comments || '');
   const [reason, setReason] = useState('');
   const [saving, setSaving] = useState(false);
   const submissionMappings = mappings.filter((mapping) => mapping.evidence_submission_id === submission?.id);
   const [approvedReuseMappingIds, setApprovedReuseMappingIds] = useState(submissionMappings.filter((mapping) => mapping.mapping_type === 'primary').map((mapping) => mapping.id));
   const actions = [
-    { value: 'accepted', label: 'Accept evidence', icon: CheckCircle2, color: 'text-emerald-600' },
-    { value: 'accepted_with_observation', label: 'Accept with observation', icon: CheckCircle2, color: 'text-teal-600', requireComment: true },
-    { value: 'rejected', label: 'Reject evidence', icon: FileX, color: 'text-red-600', requireReason: true },
-    { value: 'clarification_requested', label: 'Request clarification', icon: MessageSquare, color: 'text-purple-600', requireReason: true },
-    { value: 'further_comments_requested', label: 'Request further comments', icon: MessageSquare, color: 'text-purple-600', requireReason: true },
-    { value: 'corrected_file_requested', label: 'Request corrected file', icon: RefreshCw, color: 'text-amber-600', requireReason: true },
-    { value: 'updated_evidence_requested', label: 'Request updated evidence', icon: RefreshCw, color: 'text-amber-600', requireReason: true },
-    { value: 'formal_approval_requested', label: 'Request formal approval', icon: ShieldCheck, color: 'text-blue-600', requireReason: true },
-    { value: 'partially_sufficient', label: 'Mark partially sufficient', icon: AlertTriangle, color: 'text-orange-600', requireReason: true },
+    { value: 'Accepted', label: 'Accept evidence', icon: CheckCircle2, color: 'text-emerald-600' },
+    { value: 'Accepted with Observation', label: 'Accept with observation', icon: CheckCircle2, color: 'text-teal-600', requireComment: true },
+    { value: 'Partially Sufficient', label: 'Mark partially sufficient', icon: AlertTriangle, color: 'text-orange-600', requireReason: true },
+    { value: 'request_comments', decision: 'Revision Required', label: 'Require further comments', icon: MessageSquare, color: 'text-purple-600', requireReason: true },
+    { value: 'Revision Required', label: 'Request revised evidence', icon: RefreshCw, color: 'text-amber-600', requireReason: true },
+    { value: 'Rejected', label: 'Reject evidence', icon: FileX, color: 'text-red-600', requireReason: true },
+    { value: 'Expired', label: 'Mark evidence expired', icon: AlertTriangle, color: 'text-red-600', requireReason: true },
+    { value: 'Superseded', label: 'Mark evidence superseded', icon: History, color: 'text-slate-500', requireReason: true },
   ];
+
+  const legacyDecision = (decision) => ({
+    'Pending Review': 'awaiting_review',
+    'Accepted': 'accepted',
+    'Accepted with Observation': 'accepted_with_observation',
+    'Partially Sufficient': 'partially_sufficient',
+    'Revision Required': 'corrected_file_requested',
+    'Rejected': 'rejected',
+    'Expired': 'updated_evidence_requested',
+    'Superseded': 'updated_evidence_requested',
+  }[decision] || 'awaiting_review');
+
+  const mappingLegacyDecision = (decision) => ({
+    'Accepted': 'accepted',
+    'Accepted with Observation': 'accepted_with_observation',
+    'Partially Sufficient': 'partially_sufficient',
+    'Rejected': 'rejected',
+  }[decision] || 'pending');
+
+  const mappingStatusFromDecision = (decision) => ({
+    'Accepted': 'Active',
+    'Accepted with Observation': 'Active',
+    'Partially Sufficient': 'Revision Required',
+    'Revision Required': 'Revision Required',
+    'Rejected': 'Rejected',
+    'Expired': 'Expired',
+    'Superseded': 'Superseded',
+  }[decision] || 'Pending');
 
   const notifyOwners = async (actionLabel) => {
     for (const ownerId of request.assigned_owner_ids || []) {
@@ -508,110 +636,258 @@ function EvidenceReviewModal({ request, audit, submission, mappings, requests, a
     }
   };
 
-  const saveDecision = async (action, closeAfter = false) => {
-    const actionDefinition = actions.find((item) => item.value === action);
-    if (actionDefinition.requireReason && !reason.trim()) return alert('A reason is required when evidence is rejected or returned for revision.');
+  const saveDecision = async (actionValue) => {
+    const actionDefinition = actions.find((item) => item.value === actionValue);
+    const decision = actionDefinition.decision || actionValue;
+    if (actionDefinition.requireReason && !reason.trim()) return alert('A reason is required when evidence is returned, rejected, expired, or superseded.');
     if (actionDefinition.requireComment && !comments.trim()) return alert('An observation comment is required.');
     setSaving(true);
     try {
       const now = new Date().toISOString();
-      const accepted = ['accepted', 'accepted_with_observation'].includes(action);
+      const accepted = isAcceptedReviewDecision(decision);
       if (accepted) {
-        for (const previous of submissions.filter((item) => item.master_evidence_id === submission.master_evidence_id && item.id !== submission.id && item.is_active_version)) await base44.entities.EvidenceSubmission.update(previous.id, { is_active_version: false, validity_status: 'Superseded', superseded_date: now });
+        for (const previous of submissions.filter((item) => item.master_evidence_id === submission.master_evidence_id && item.id !== submission.id && item.is_active_version)) {
+          await base44.entities.EvidenceSubmission.update(previous.id, { is_active_version: false, validity_status: 'Superseded', superseded_date: now, review_decision: 'Superseded' });
+        }
       }
       await base44.entities.EvidenceSubmission.update(submission.id, {
-        review_status: action, review_comments: comments, rejection_reason: reason, reviewed_by_id: '',
-        approval_status: accepted ? 'approved' : action === 'rejected' ? 'rejected' : 'pending',
-        is_active_version: accepted ? true : submission.is_active_version,
-        acceptance_date: accepted ? now : '', rejection_date: action === 'rejected' ? now : '',
-        validity_status: accepted ? validityFromExpiry(submission.expiry_date) : action === 'rejected' ? 'Under Review' : submission.validity_status,
-        review_history: [...(submission.review_history || []), { action, comments, reason, reviewed_at: now }],
+        review_decision: decision,
+        review_status: legacyDecision(decision),
+        review_comments: comments,
+        rejection_reason: reason,
+        reviewed_by_id: '',
+        approval_status: accepted ? 'approved' : decision === 'Rejected' ? 'rejected' : 'pending',
+        is_active_version: accepted ? true : decision === 'Superseded' ? false : submission.is_active_version,
+        acceptance_date: accepted ? now : '',
+        rejection_date: decision === 'Rejected' ? now : '',
+        validity_status: decision === 'Expired' ? 'Expired' : decision === 'Superseded' ? 'Superseded' : accepted ? validityFromExpiry(submission.expiry_date) : submission.validity_status,
+        review_history: [...(submission.review_history || []), { decision, action: actionValue, comments, reason, reviewed_at: now }],
       });
+      await recordStatusTransition({ entityType: 'EvidenceSubmission', entityId: submission.id, previousStatus: normalizeReviewDecision(submission.review_decision || submission.review_status), newStatus: decision, reason: comments || reason, auditId: audit.id, auditControlId: request.audit_control_id, changedAt: now });
       const targetMappingIds = accepted ? approvedReuseMappingIds : submissionMappings.filter((mapping) => mapping.evidence_request_id === request.id).map((mapping) => mapping.id);
       for (const mapping of submissionMappings) {
         if (!targetMappingIds.includes(mapping.id)) continue;
-        await base44.entities.EvidenceMapping.update(mapping.id, { review_status: accepted ? action : action === 'partially_sufficient' ? 'partially_sufficient' : action === 'rejected' ? 'rejected' : 'pending', review_comments: comments || reason, reviewed_at: now });
+        await base44.entities.EvidenceMapping.update(mapping.id, {
+          review_decision: decision,
+          review_status: mappingLegacyDecision(decision),
+          mapping_status: mappingStatusFromDecision(decision),
+          review_comments: comments || reason,
+          reviewed_at: now,
+        });
+        await recordStatusTransition({ entityType: 'EvidenceMapping', entityId: mapping.id, previousStatus: normalizeReviewDecision(mapping.review_decision || mapping.review_status), newStatus: decision, reason: comments || reason, auditId: audit.id, auditControlId: mapping.audit_control_id, changedAt: now });
         const targetRequest = requests.find((candidate) => candidate.id === mapping.evidence_request_id);
-        if (targetRequest) await base44.entities.EvidenceRequest.update(targetRequest.id, { review_status: action, review_comments: comments, rejection_reason: reason, status: accepted ? targetRequest.status : action === 'partially_sufficient' ? 'Partially Received' : 'Require Further Comments', acceptance_date: accepted ? now : '', rejection_date: action === 'rejected' ? now : '' });
+        if (targetRequest) {
+          const requestStatus = reviewDecisionToRequestStatus(decision, targetRequest.status, actionValue);
+          await base44.entities.EvidenceRequest.update(targetRequest.id, {
+            review_decision: decision,
+            review_status: legacyDecision(decision),
+            review_comments: comments,
+            rejection_reason: reason,
+            status: requestStatus,
+            acceptance_date: accepted ? now : '',
+            rejection_date: decision === 'Rejected' ? now : '',
+            status_history: [...(targetRequest.status_history || []), { status: requestStatus, changed_by: 'auditor', changed_at: now, comment: `${decision}: ${comments || reason || 'reviewed'}` }],
+          });
+          await recordStatusTransition({ entityType: 'EvidenceRequest', entityId: targetRequest.id, previousStatus: targetRequest.status, newStatus: requestStatus, reason: `${decision}: ${comments || reason || 'reviewed'}`, auditId: audit.id, auditControlId: targetRequest.audit_control_id, changedAt: now });
+        }
       }
-      await logAudit({ action: 'evidence_reviewed', recordType: 'EvidenceSubmission', recordId: submission.id, recordName: submission.display_title, previousValue: submission.review_status, newValue: action, comment: comments, reason });
+      await logAudit({ action: 'evidence_reviewed', recordType: 'EvidenceSubmission', recordId: submission.id, recordName: submission.display_title, previousValue: normalizeReviewDecision(submission.review_decision || submission.review_status), newValue: decision, comment: comments, reason });
       await notifyOwners(actionDefinition.label);
-      if (closeAfter && accepted) await closeEligibleControls(targetMappingIds);
-      else { onDone(); onClose(); }
+      onDone();
+      onClose();
     } catch (error) { alert(`Failed: ${error.message}`); }
     finally { setSaving(false); }
   };
 
-  const controlEligibility = async (auditControlId) => {
-    const controlRequests = requests.filter((candidate) => candidate.audit_control_id === auditControlId);
-    if (!controlRequests.length) return { eligible: false, reason: 'No evidence requests' };
-    const findingRecords = await base44.entities.Finding.filter({ audit_control_id: auditControlId });
-    if (findingRecords.some((finding) => !['verified_closed', 'accepted'].includes(finding.status))) return { eligible: false, reason: 'Open finding' };
-    for (const controlRequest of controlRequests) {
-      if (controlRequest.status === 'Not Applicable') continue;
-      const expectedItem = expectedEvidence.find((item) => item.id === controlRequest.expected_evidence_id);
-      if (expectedItem && expectedItem.is_mandatory === false) continue;
-      if (!['accepted', 'accepted_with_observation'].includes(controlRequest.review_status)) return { eligible: false, reason: `Unaccepted evidence: ${controlRequest.title}` };
-      const acceptedSubmission = submissions.filter((item) => item.evidence_request_id === controlRequest.id || (item.linked_evidence_request_ids || []).includes(controlRequest.id)).find((item) => ['accepted', 'accepted_with_observation'].includes(item.review_status));
-      if (!acceptedSubmission) return { eligible: false, reason: `No accepted file: ${controlRequest.title}` };
-      if (acceptedSubmission.expiry_date && new Date(`${acceptedSubmission.expiry_date}T23:59:59`) < new Date()) return { eligible: false, reason: `Expired evidence: ${controlRequest.title}` };
-      if (expectedItem?.requires_formal_approval && acceptedSubmission.approval_status !== 'approved') return { eligible: false, reason: `Approval missing: ${controlRequest.title}` };
-      const mandatoryConditions = conditions.filter((condition) => condition.expected_evidence_id === controlRequest.expected_evidence_id && condition.is_mandatory !== false && condition.active !== false);
-      const results = acceptedSubmission.checklist_results || [];
-      if (mandatoryConditions.some((condition) => !results.find((result) => (result.condition_id === condition.id || result.condition === condition.name) && result.passed === true))) return { eligible: false, reason: `Mandatory condition failed: ${controlRequest.title}` };
-    }
-    return { eligible: true };
-  };
-
-  const closeEligibleControls = async (mappingIds = approvedReuseMappingIds) => {
-    const selectedMappings = submissionMappings.filter((mapping) => mappingIds.includes(mapping.id));
-    const candidateIds = Array.from(new Set([request.audit_control_id, ...selectedMappings.map((mapping) => mapping.audit_control_id)]));
-    const closed = [];
-    const open = [];
-    for (const auditControlId of candidateIds) {
-      const result = await controlEligibility(auditControlId);
-      const control = auditControls.find((item) => item.id === auditControlId);
-      if (result.eligible) {
-        await base44.entities.AuditControl.update(auditControlId, { is_closed: true, closure_date: new Date().toISOString().slice(0, 10), compliance_status: 'Implemented' });
-        await logAudit({ action: 'control_closure', recordType: 'AuditControl', recordId: auditControlId, recordName: control?.control_title || 'Control', comment: 'Closed after all mandatory evidence, conditions, validity, approvals and findings were evaluated.' });
-        closed.push(control?.control_number || auditControlId);
-      } else open.push(`${control?.control_number || auditControlId}: ${result.reason}`);
-    }
-    alert(`Closed ${closed.length} eligible control(s).${open.length ? `\nKept open:\n${open.join('\n')}` : ''}`);
-    onDone(); onClose();
-  };
-
   const createFinding = async (withCorrectionPlan = false) => {
+    const now = new Date().toISOString();
     const finding = await base44.entities.Finding.create({
-      title: `Finding from ${request.title}`, description: comments || reason || 'Finding from evidence review.', source_audit_id: audit.id, source_type: 'Evidence Review', framework_id: audit.framework_id, control_id: request.control_id, audit_control_id: request.audit_control_id, evidence_request_id: request.id, severity: 'medium', risk_rating: 'medium', regulatory_impact: '', owner_id: (request.assigned_owner_ids || [])[0] || '', department_id: request.assigned_department_id || '', due_date: '', auditor_comments: comments || reason, status: 'open', status_history: [{ status: 'open', changed_at: new Date().toISOString() }],
+      title: `Finding from ${request.title}`,
+      description: comments || reason || 'Finding from evidence review.',
+      source_audit_id: audit.id,
+      source_type: 'Evidence Review',
+      framework_id: audit.framework_id,
+      control_id: request.control_id,
+      audit_control_id: request.audit_control_id,
+      evidence_request_id: request.id,
+      severity: 'medium',
+      risk_rating: 'medium',
+      regulatory_impact: '',
+      owner_id: (request.assigned_owner_ids || [])[0] || '',
+      department_id: request.assigned_department_id || '',
+      due_date: request.due_date || '',
+      auditor_comments: comments || reason,
+      status: withCorrectionPlan ? 'Correction Plan Required' : 'Open',
+      status_history: [{ status: withCorrectionPlan ? 'Correction Plan Required' : 'Open', changed_at: now }],
     });
     await logAudit({ action: 'finding_created', recordType: 'Finding', recordId: finding.id, recordName: finding.title, comment: 'Created from evidence review' });
     if (withCorrectionPlan) {
-      const plan = await base44.entities.CorrectionPlan.create({ corrective_action: `Correct evidence deficiency: ${request.title}`, finding_id: finding.id, audit_id: audit.id, control_id: request.control_id, primary_owner_id: finding.owner_id, supporting_owner_ids: (request.assigned_owner_ids || []).slice(1), priority: 'medium', risk: 'medium', completion_percentage: 0, required_closure_evidence: request.title, validation_comments: '', escalation_level: 0, closure_decision: 'pending', status: 'open' });
+      const plan = await base44.entities.CorrectionPlan.create({
+        corrective_action: `Correct evidence deficiency: ${request.title}`,
+        gap_description: finding.description,
+        root_cause: '',
+        finding_id: finding.id,
+        audit_id: audit.id,
+        control_id: request.control_id,
+        primary_owner_id: finding.owner_id,
+        supporting_owner_ids: (request.assigned_owner_ids || []).slice(1),
+        priority: 'medium',
+        risk: 'medium',
+        start_date: now.slice(0, 10),
+        target_date: request.due_date || '',
+        completion_percentage: 0,
+        required_closure_evidence: request.title,
+        validation_comments: '',
+        escalation_level: 0,
+        closure_decision: 'Pending',
+        status: 'Awaiting Owner Response',
+        status_history: [{ status: 'Awaiting Owner Response', changed_at: now, comment: 'Created from evidence-review finding' }],
+      });
       await logAudit({ action: 'correction_plan_created', recordType: 'CorrectionPlan', recordId: plan.id, recordName: plan.corrective_action, comment: 'Created from evidence review finding' });
     }
-    alert(withCorrectionPlan ? 'Finding and correction-plan item created.' : 'Finding created.'); onDone(); onClose();
+    alert(withCorrectionPlan ? 'Finding and correction plan created.' : 'Finding created.');
+    onDone();
+    onClose();
   };
 
   if (!submission) return null;
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl max-w-2xl w-full max-h-[94vh] overflow-y-auto">
-      <div className="flex justify-between px-6 py-4 border-b"><h2 className="font-semibold">Review Evidence</h2><button onClick={onClose}><X className="w-5 h-5" /></button></div>
+      <div className="flex justify-between px-6 py-4 border-b"><div><h2 className="font-semibold">Review Evidence</h2><p className="text-xs text-slate-500">Evidence review is separate from the control compliance decision.</p></div><button onClick={onClose}><X className="w-5 h-5" /></button></div>
       <div className="p-6 space-y-4">
         <div className="bg-slate-50 rounded-lg p-3 text-sm"><div className="font-medium">{submission.display_title}</div><div className="text-xs text-slate-500">Master {submission.master_evidence_id} · v{submission.version} · {submission.original_file_name} · {submission.confidentiality_classification}</div><Link to={`/evidence/${submission.id}`} className="text-xs text-blue-600 underline mt-1 inline-block">Secure application preview</Link></div>
         <div className="grid md:grid-cols-2 gap-3 text-xs"><div><strong>Validity:</strong> {submission.expiry_date || 'No expiry'}</div><div><strong>Approval authority:</strong> {submission.approving_authority || 'Not supplied'}</div><div><strong>System:</strong> {submission.related_system_id || '—'}</div><div><strong>Site:</strong> {submission.related_site_id || '—'}</div></div>
         <div className="border rounded-lg p-3"><div className="text-xs font-semibold mb-2">Auditee checklist</div>{(submission.checklist_results || []).map((result, index) => <div key={index} className="text-xs flex justify-between py-0.5"><span>{result.condition}</span><span className={result.passed ? 'text-emerald-700' : 'text-red-700'}>{result.passed ? 'Yes' : 'No'}</span></div>)}</div>
-        {submissionMappings.length > 0 && <div className="border rounded-lg p-3"><div className="text-xs font-semibold">Independent control mappings</div><p className="text-[10px] text-slate-400 mb-2">Select reuse mappings to approve. Unselected controls remain pending/open.</p>{submissionMappings.map((mapping) => { const targetRequest = requests.find((candidate) => candidate.id === mapping.evidence_request_id); const targetControl = auditControls.find((control) => control.id === mapping.audit_control_id); return <label key={mapping.id} className="flex items-center gap-2 text-xs py-1"><input type="checkbox" disabled={mapping.mapping_type === 'primary'} checked={approvedReuseMappingIds.includes(mapping.id)} onChange={(event) => setApprovedReuseMappingIds((previous) => event.target.checked ? [...previous, mapping.id] : previous.filter((id) => id !== mapping.id))} /><span>{targetControl?.control_number} — {targetRequest?.title} <em className="text-slate-400">({mapping.mapping_type}; {mapping.review_status})</em></span></label>; })}</div>}
+        {submissionMappings.length > 0 && <div className="border rounded-lg p-3"><div className="text-xs font-semibold">Independent control mappings</div><p className="text-[10px] text-slate-400 mb-2">Select reuse mappings to accept. Every control mapping keeps its own review decision.</p>{submissionMappings.map((mapping) => { const targetRequest = requests.find((candidate) => candidate.id === mapping.evidence_request_id); const targetControl = auditControls.find((control) => control.id === mapping.audit_control_id); return <label key={mapping.id} className="flex items-center gap-2 text-xs py-1"><input type="checkbox" disabled={mapping.mapping_type === 'primary'} checked={approvedReuseMappingIds.includes(mapping.id)} onChange={(event) => setApprovedReuseMappingIds((previous) => event.target.checked ? [...previous, mapping.id] : previous.filter((id) => id !== mapping.id))} /><span>{targetControl?.control_number} — {targetRequest?.title} <em className="text-slate-400">({mapping.mapping_type}; {normalizeReviewDecision(mapping.review_decision || mapping.review_status)})</em></span></label>; })}</div>}
         <label className="block text-xs font-medium text-slate-600">Reviewer comments<textarea value={comments} onChange={(event) => setComments(event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-20" /></label>
         <label className="block text-xs font-medium text-slate-600">Reason for rejection/return<input value={reason} onChange={(event) => setReason(event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></label>
         <div className="grid grid-cols-1 gap-2">{actions.map((action) => <button key={action.value} onClick={() => saveDecision(action.value)} disabled={saving} className="flex items-center gap-2 text-sm border px-3 py-2 rounded-lg hover:bg-slate-50 text-left"><action.icon className={`w-4 h-4 ${action.color}`} />{action.label}{(action.requireReason || action.requireComment) && <span className="ml-auto text-[10px] text-red-500">explanation required</span>}</button>)}</div>
-        <div className="pt-3 border-t space-y-2"><button onClick={() => saveDecision('accepted', true)} disabled={saving} className="w-full flex justify-center gap-2 text-sm bg-emerald-600 text-white py-2 rounded-lg"><CheckCircle2 className="w-4 h-4" />Approve evidence and close all eligible controls</button><div className="grid md:grid-cols-2 gap-2"><button onClick={() => createFinding(false)} className="text-sm border border-red-200 text-red-700 py-2 rounded-lg">Create finding</button><button onClick={() => createFinding(true)} className="text-sm border border-amber-200 text-amber-700 py-2 rounded-lg">Create finding + correction plan</button></div></div>
+        <div className="pt-3 border-t"><div className="bg-blue-50 border border-blue-100 rounded-lg p-3 text-xs text-blue-800 mb-3">Accepting evidence does not mark the control Implemented. Return to the control and record a separate compliance evaluation.</div><div className="grid md:grid-cols-2 gap-2"><button onClick={() => createFinding(false)} className="text-sm border border-red-200 text-red-700 py-2 rounded-lg">Create finding</button><button onClick={() => createFinding(true)} className="text-sm border border-amber-200 text-amber-700 py-2 rounded-lg">Create finding + correction plan</button></div></div>
       </div>
     </div></div>
   );
 }
 
-function FieldInput({ label, value, onChange, type = 'text', placeholder = '' }) { return <label className="block text-xs font-medium text-slate-600">{label}<input type={type} value={value || ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm" /></label>; }
+function AuditWorkflowPanel({ workflow, auditType }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div><h2 className="text-sm font-semibold text-slate-900">Unified audit workflow</h2><p className="text-xs text-slate-500 mt-1">{auditType} follows the same control-to-closure workflow as every other audit type.</p></div>
+        <div className="text-right"><div className="text-xs text-slate-400">Current stage</div><div className="text-sm font-semibold text-slate-900">{workflow.currentStage.label}</div><div className="text-xs text-slate-500">{workflow.completionPercentage}% workflow progress</div></div>
+      </div>
+      <div className="mt-4 overflow-x-auto pb-1"><div className="flex min-w-[920px] items-start">
+        {workflow.stages.map((stage, index) => <React.Fragment key={stage.id}><div className="w-24 flex-shrink-0 text-center"><div className={cn("w-7 h-7 rounded-full mx-auto flex items-center justify-center text-[11px] font-semibold border", stage.state === 'complete' ? 'bg-emerald-600 border-emerald-600 text-white' : stage.state === 'current' ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-200 text-slate-400')}>{index + 1}</div><div className={cn("text-[10px] mt-1 leading-tight", stage.state === 'current' ? 'font-semibold text-slate-900' : 'text-slate-500')}>{stage.label}</div></div>{index < AUDIT_WORKFLOW_STAGES.length - 1 && <div className={cn("h-0.5 flex-1 mt-3.5", stage.state === 'complete' ? 'bg-emerald-500' : 'bg-slate-200')} />}</React.Fragment>)}
+      </div></div>
+      <div className="mt-3 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-600"><strong>{workflow.currentStage.label}:</strong> {workflow.currentStage.description}</div>
+    </div>
+  );
+}
+
+function AuditResponseModal({ audit, auditControl, requests, owners, findings, onClose, onDone }) {
+  const { user } = useAuth();
+  const defaultType = {
+    'Implemented': 'Control Accepted',
+    'Partially Implemented': 'Partially Implemented',
+    'Not Implemented': 'Not Implemented',
+    'Not Applicable': 'Not Applicable Accepted',
+  }[auditControl.compliance_status] || 'Additional Evidence Required';
+  const ownerIds = Array.from(new Set([...(auditControl.control_level_owners || []), ...requests.flatMap((request) => request.assigned_owner_ids || [])]));
+  const reviewSummary = requests.map((request) => `${request.title}: ${normalizeReviewDecision(request.review_decision || request.review_status)}`).join('\n');
+  const [form, setForm] = useState({
+    response_type: defaultType,
+    evidence_review_summary: reviewSummary,
+    auditor_comments: auditControl.evaluation_reason || '',
+    missing_requirements: '',
+    required_next_action: ['Partially Implemented', 'Not Implemented'].includes(auditControl.compliance_status) ? 'Submit and execute an approved correction plan.' : 'No further action required.',
+    due_date: auditControl.due_date || '',
+    correction_plan_required: ['Partially Implemented', 'Not Implemented'].includes(auditControl.compliance_status),
+    sent_to_owner_ids: ownerIds,
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (key, value) => setForm((previous) => ({ ...previous, [key]: value }));
+  const responseTypes = ['Control Accepted','Accepted with Observation','Additional Evidence Required','Further Comments Required','Evidence Rejected','Partially Implemented','Not Implemented','Not Applicable Accepted','Not Applicable Rejected'];
+  const save = async () => {
+    if (!form.response_type || !form.required_next_action) return alert('Response type and required next action are required.');
+    const responseErrors = validateAuditResponseType({ responseType: form.response_type, complianceStatus: auditControl.compliance_status });
+    if (responseErrors.length) return alert(`Audit response cannot be sent:
+
+${responseErrors.join('\n')}`);
+    if (form.correction_plan_required && !form.due_date) return alert('A due date is required when a correction plan is required.');
+    setSaving(true);
+    try {
+      const sentAt = new Date().toISOString();
+      const response = await base44.entities.AuditResponse.create({
+        audit_id: audit.id,
+        audit_control_id: auditControl.id,
+        control_id: auditControl.control_id,
+        response_type: form.response_type,
+        evidence_review_summary: form.evidence_review_summary,
+        compliance_status: auditControl.compliance_status,
+        auditor_comments: form.auditor_comments,
+        missing_requirements: form.missing_requirements,
+        required_next_action: form.required_next_action,
+        due_date: form.due_date,
+        correction_plan_required: form.correction_plan_required,
+        sent_to_owner_ids: form.sent_to_owner_ids,
+        sent_by_id: user?.id || '',
+        sent_at: sentAt,
+      });
+      const returnedRequestStatus = {
+        'Additional Evidence Required': 'Requested',
+        'Further Comments Required': 'Require Further Comments',
+        'Evidence Rejected': 'Requested',
+        'Not Applicable Rejected': 'Requested',
+      }[form.response_type];
+      if (returnedRequestStatus) {
+        for (const evidenceRequest of requests) {
+          const previousRequestStatus = evidenceRequest.status;
+          await base44.entities.EvidenceRequest.update(evidenceRequest.id, {
+            status: returnedRequestStatus,
+            status_history: [...(evidenceRequest.status_history || []), { status: returnedRequestStatus, changed_by: user?.id || 'auditor', changed_at: sentAt, comment: `${form.response_type}: ${form.required_next_action}` }],
+          });
+          if (previousRequestStatus !== returnedRequestStatus) await recordStatusTransition({ entityType: 'EvidenceRequest', entityId: evidenceRequest.id, previousStatus: previousRequestStatus, newStatus: returnedRequestStatus, reason: `${form.response_type}: ${form.required_next_action}`, auditId: audit.id, auditControlId: auditControl.id, changedAt: sentAt });
+        }
+      }
+      if (form.response_type === 'Not Applicable Rejected') {
+        await base44.entities.AuditControl.update(auditControl.id, { compliance_status: 'Under Evaluation', evaluation_reason: form.auditor_comments || 'Not Applicable justification rejected.', evaluated_at: sentAt, evaluated_by_id: user?.id || '', is_closed: false, closure_date: '' });
+        await recordStatusTransition({ entityType: 'AuditControl', entityId: auditControl.id, previousStatus: auditControl.compliance_status, newStatus: 'Under Evaluation', reason: form.auditor_comments || 'Not Applicable justification rejected.', auditId: audit.id, auditControlId: auditControl.id, changedAt: sentAt });
+      }
+      for (const ownerId of form.sent_to_owner_ids) {
+        const owner = owners.find((item) => item.id === ownerId);
+        await dispatchNotification({ recipientId: ownerId, recipientEmail: owner?.work_email, type: 'audit_response', title: `${audit.name} — ${auditControl.control_number} response`, body: `${form.response_type}. ${form.required_next_action}${form.due_date ? ` Due: ${form.due_date}.` : ''}`, relatedRecordType: 'AuditResponse', relatedRecordId: response.id, link: `/audits/${audit.id}` });
+      }
+      const closesControl = ['Control Accepted', 'Accepted with Observation', 'Not Applicable Accepted'].includes(form.response_type) && !findings.some((finding) => isOpenFindingStatus(finding.status));
+      if (closesControl) { await base44.entities.AuditControl.update(auditControl.id, { is_closed: true, closure_date: sentAt.slice(0, 10) }); await recordStatusTransition({ entityType: 'AuditControlClosure', entityId: auditControl.id, previousStatus: 'Open', newStatus: 'Closed', reason: form.response_type, auditId: audit.id, auditControlId: auditControl.id, changedAt: sentAt }); }
+      if (form.correction_plan_required) {
+        for (const finding of findings.filter((item) => ['Draft', 'Open', 'Management Response Required'].includes(normalizeFindingStatus(item.status)))) {
+          const previousFindingStatus = normalizeFindingStatus(finding.status);
+          await base44.entities.Finding.update(finding.id, { status: 'Correction Plan Required', due_date: form.due_date || finding.due_date, status_history: [...(finding.status_history || []), { status: 'Correction Plan Required', changed_at: sentAt, comment: 'Formal audit response requires a correction plan.' }] });
+          if (previousFindingStatus !== 'Correction Plan Required') await recordStatusTransition({ entityType: 'Finding', entityId: finding.id, previousStatus: previousFindingStatus, newStatus: 'Correction Plan Required', reason: 'Formal audit response requires a correction plan.', auditId: audit.id, auditControlId: auditControl.id, changedAt: sentAt });
+        }
+      }
+      await logAudit({ action: 'audit_response_sent', recordType: 'AuditResponse', recordId: response.id, recordName: `${auditControl.control_number} — ${form.response_type}`, newValue: response, comment: form.required_next_action });
+      onDone();
+    } catch (error) { alert(`Failed to send response: ${error.message}`); }
+    finally { setSaving(false); }
+  };
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl max-w-2xl w-full max-h-[94vh] overflow-y-auto">
+      <div className="flex justify-between px-6 py-4 border-b"><div><h2 className="font-semibold">Send Audit Response</h2><p className="text-xs text-slate-500">{auditControl.control_number} — {auditControl.control_title}</p></div><button onClick={onClose}><X className="w-5 h-5" /></button></div>
+      <div className="p-6 space-y-3">
+        <div className="grid md:grid-cols-2 gap-3"><SelectInput label="Response type" value={form.response_type} onChange={(value) => set('response_type', value)} options={responseTypes.map((value) => ({ value, label: value }))} /><FieldInput label="Compliance status" value={auditControl.compliance_status} onChange={() => {}} disabled /></div>
+        <label className="block text-xs font-medium text-slate-600">Evidence reviewed<textarea value={form.evidence_review_summary} onChange={(event) => set('evidence_review_summary', event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-24" /></label>
+        <label className="block text-xs font-medium text-slate-600">Auditor comments<textarea value={form.auditor_comments} onChange={(event) => set('auditor_comments', event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-20" /></label>
+        <label className="block text-xs font-medium text-slate-600">Missing requirements<textarea value={form.missing_requirements} onChange={(event) => set('missing_requirements', event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-16" /></label>
+        <label className="block text-xs font-medium text-slate-600">Required next action *<textarea value={form.required_next_action} onChange={(event) => set('required_next_action', event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-20" /></label>
+        <div className="grid md:grid-cols-2 gap-3"><FieldInput type="date" label="Due date" value={form.due_date} onChange={(value) => set('due_date', value)} /><label className="flex items-center gap-2 text-xs text-slate-600 mt-6"><input type="checkbox" checked={form.correction_plan_required} onChange={(event) => set('correction_plan_required', event.target.checked)} />Correction plan required</label></div>
+        <label className="text-xs font-medium text-slate-600">Recipients<select multiple value={form.sent_to_owner_ids} onChange={(event) => set('sent_to_owner_ids', Array.from(event.target.selectedOptions).map((option) => option.value))} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-28">{owners.filter((owner) => owner.active !== false).map((owner) => <option key={owner.id} value={owner.id}>{owner.full_name} — {owner.work_email}</option>)}</select></label>
+      </div>
+      <div className="px-6 py-4 border-t flex justify-end gap-2"><button onClick={onClose} className="text-sm px-4 py-2">Cancel</button><button onClick={save} disabled={saving} className="text-sm bg-slate-900 text-white px-4 py-2 rounded-lg disabled:opacity-50">{saving ? 'Sending…' : 'Send response'}</button></div>
+    </div></div>
+  );
+}
+
+function FieldInput({ label, value, onChange, type = 'text', placeholder = '', disabled = false }) { return <label className="block text-xs font-medium text-slate-600">{label}<input type={type} value={value || ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} disabled={disabled} className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm disabled:bg-slate-50 disabled:text-slate-500" /></label>; }
 function SelectInput({ label, value, onChange, options }) { return <label className="block text-xs font-medium text-slate-600">{label}<select value={value || ''} onChange={(event) => onChange(event.target.value)} className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"><option value="">—</option>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>; }
 async function sha256File(file) { const buffer = await file.arrayBuffer(); const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', buffer); return Array.from(new Uint8Array(hashBuffer)).map((value) => value.toString(16).padStart(2, '0')).join(''); }
 function validityFromExpiry(expiryDate) { if (!expiryDate) return 'Valid'; const expiry = new Date(`${expiryDate}T23:59:59`); const now = new Date(); if (expiry < now) return 'Expired'; return (expiry.getTime() - now.getTime()) / 86400000 <= 30 ? 'Expiring Soon' : 'Valid'; }

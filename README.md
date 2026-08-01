@@ -36,10 +36,11 @@ npm audit
 
 `npm run validate` executes:
 
-1. JavaScript type checking
-2. production build
-3. ESLint error gate
-4. automated tests
+1. Dependency-free unified-workflow contract validation
+2. JavaScript type checking
+3. production build
+4. ESLint error gate
+5. automated tests
 
 ## Demonstration Data
 
@@ -74,12 +75,14 @@ Sample files:
 - `compliance-automation`
 - `end-of-day-digest`
 - `compliance-snapshot`
+- `migrate-unified-audit-workflow`
 
 Verify function deployment and schedules after publishing the Base44 application.
 
 ## Documentation
 
 - [Architecture](src/docs/ARCHITECTURE.md)
+- [Unified Audit Workflow Implementation](src/docs/UNIFIED_AUDIT_WORKFLOW_IMPLEMENTATION.md)
 - [Requirement Traceability Matrix](src/docs/REQUIREMENT_TRACEABILITY_MATRIX.md)
 - [Validation Report](src/docs/VALIDATION_REPORT.md)
 - [API Documentation](src/docs/API_DOCUMENTATION.md)
@@ -91,3 +94,5 @@ Verify function deployment and schedules after publishing the Base44 application
 ## Release Position
 
 The source is suitable for controlled demonstration and acceptance testing after the quality gate passes. Production release additionally requires malware scanning, short-lived evidence delivery, enterprise SSO, email integration, penetration testing, privacy/data-residency approval and runtime verification of scheduled functions.
+
+- [Compliance Workflow Implementation Contract](src/docs/COMPLIANCE_WORKFLOW_IMPLEMENTATION_CONTRACT.md)

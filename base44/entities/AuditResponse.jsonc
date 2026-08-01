@@ -1,0 +1,70 @@
+{
+  "name": "AuditResponse",
+  "type": "object",
+  "properties": {
+    "audit_id": { "type": "string" },
+    "audit_control_id": { "type": "string" },
+    "control_id": { "type": "string" },
+    "response_type": {
+      "type": "string",
+      "enum": [
+        "Control Accepted",
+        "Accepted with Observation",
+        "Additional Evidence Required",
+        "Further Comments Required",
+        "Evidence Rejected",
+        "Partially Implemented",
+        "Not Implemented",
+        "Not Applicable Accepted",
+        "Not Applicable Rejected"
+      ]
+    },
+    "evidence_review_summary": { "type": "string" },
+    "compliance_status": { "type": "string" },
+    "auditor_comments": { "type": "string" },
+    "missing_requirements": { "type": "string" },
+    "required_next_action": { "type": "string" },
+    "due_date": { "type": "string", "format": "date" },
+    "correction_plan_required": { "type": "boolean", "default": false },
+    "sent_to_owner_ids": { "type": "array", "items": { "type": "string" } },
+    "sent_by_id": { "type": "string" },
+    "sent_at": { "type": "string", "format": "date-time" }
+  },
+  "required": ["audit_id", "audit_control_id", "response_type", "compliance_status"],
+  "rls": {
+    "create": { "$or": [
+      { "user_condition": { "role": "admin" } },
+      { "user_condition": { "role": "System Administrator" } },
+      { "user_condition": { "role": "Compliance Administrator" } },
+      { "user_condition": { "role": "Compliance Officer" } },
+      { "user_condition": { "role": "Auditor" } }
+    ]},
+    "read": { "$or": [
+      { "user_condition": { "role": "admin" } },
+      { "user_condition": { "role": "user" } },
+      { "user_condition": { "role": "System Administrator" } },
+      { "user_condition": { "role": "Compliance Administrator" } },
+      { "user_condition": { "role": "Compliance Officer" } },
+      { "user_condition": { "role": "Auditor" } },
+      { "user_condition": { "role": "Auditee" } },
+      { "user_condition": { "role": "Control Owner" } },
+      { "user_condition": { "role": "Department Manager" } },
+      { "user_condition": { "role": "Division Manager" } },
+      { "user_condition": { "role": "Sector Manager" } },
+      { "user_condition": { "role": "External Auditor" } },
+      { "user_condition": { "role": "Executive Viewer" } }
+    ]},
+    "update": { "$or": [
+      { "user_condition": { "role": "admin" } },
+      { "user_condition": { "role": "System Administrator" } },
+      { "user_condition": { "role": "Compliance Administrator" } },
+      { "user_condition": { "role": "Compliance Officer" } },
+      { "user_condition": { "role": "Auditor" } }
+    ]},
+    "delete": { "$or": [
+      { "user_condition": { "role": "admin" } },
+      { "user_condition": { "role": "System Administrator" } },
+      { "user_condition": { "role": "Compliance Administrator" } }
+    ]}
+  }
+}

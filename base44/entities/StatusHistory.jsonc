@@ -1,75 +1,41 @@
 {
-  "name": "AuditControl",
+  "name": "StatusHistory",
   "type": "object",
   "properties": {
+    "entity_type": {
+      "type": "string"
+    },
+    "entity_id": {
+      "type": "string"
+    },
     "audit_id": {
       "type": "string"
     },
-    "control_id": {
+    "audit_control_id": {
       "type": "string"
     },
-    "framework_id": {
+    "previous_status": {
       "type": "string"
     },
-    "domain_id": {
+    "new_status": {
       "type": "string"
     },
-    "control_number": {
+    "changed_by": {
       "type": "string"
     },
-    "control_title": {
-      "type": "string"
-    },
-    "compliance_status": {
-      "type": "string",
-      "enum": [
-        "Under Evaluation",
-        "Implemented",
-        "Partially Implemented",
-        "Not Implemented",
-        "Not Applicable"
-      ],
-      "default": "Under Evaluation"
-    },
-    "control_level_owners": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "due_date": {
-      "type": "string",
-      "format": "date"
-    },
-    "auditor_comments": {
-      "type": "string"
-    },
-    "is_closed": {
-      "type": "boolean",
-      "default": false
-    },
-    "closure_date": {
-      "type": "string",
-      "format": "date"
-    },
-    "order": {
-      "type": "number",
-      "default": 0
-    },
-    "evaluation_reason": {
-      "type": "string"
-    },
-    "evaluated_at": {
+    "changed_at": {
       "type": "string",
       "format": "date-time"
     },
-    "evaluated_by_id": {
+    "reason": {
       "type": "string"
     }
   },
   "required": [
-    "audit_id",
-    "control_id"
+    "entity_type",
+    "entity_id",
+    "new_status",
+    "changed_at"
   ],
   "rls": {
     "create": {
@@ -77,6 +43,11 @@
         {
           "user_condition": {
             "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
           }
         },
         {
@@ -97,6 +68,16 @@
         {
           "user_condition": {
             "role": "Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditee"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Control Owner"
           }
         }
       ]
@@ -170,53 +151,7 @@
         }
       ]
     },
-    "update": {
-      "$or": [
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        },
-        {
-          "user_condition": {
-            "role": "System Administrator"
-          }
-        },
-        {
-          "user_condition": {
-            "role": "Compliance Administrator"
-          }
-        },
-        {
-          "user_condition": {
-            "role": "Compliance Officer"
-          }
-        },
-        {
-          "user_condition": {
-            "role": "Auditor"
-          }
-        }
-      ]
-    },
-    "delete": {
-      "$or": [
-        {
-          "user_condition": {
-            "role": "admin"
-          }
-        },
-        {
-          "user_condition": {
-            "role": "System Administrator"
-          }
-        },
-        {
-          "user_condition": {
-            "role": "Compliance Administrator"
-          }
-        }
-      ]
-    }
+    "update": false,
+    "delete": false
   }
 }

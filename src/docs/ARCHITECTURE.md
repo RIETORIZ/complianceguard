@@ -26,7 +26,8 @@ Browser / React UI
             ├─ reporting-export
             ├─ compliance-automation
             ├─ end-of-day-digest
-            └─ compliance-snapshot
+            ├─ compliance-snapshot
+            └─ migrate-unified-audit-workflow
 ```
 
 ## 2. Frontend

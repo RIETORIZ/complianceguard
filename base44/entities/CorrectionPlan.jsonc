@@ -67,23 +67,63 @@
     "closure_decision": {
       "type": "string",
       "enum": [
-        "pending",
-        "validated",
-        "rejected",
-        "closed"
+        "Pending",
+        "Verified",
+        "Partially Verified",
+        "Closure Evidence Rejected",
+        "Technical Validation Required",
+        "Risk Accepted",
+        "Cancelled"
       ],
-      "default": "pending"
+      "default": "Pending"
     },
     "status": {
       "type": "string",
       "enum": [
-        "open",
-        "in_progress",
-        "validated",
-        "closed",
-        "overdue"
+        "Draft",
+        "Awaiting Owner Response",
+        "Open",
+        "In Progress",
+        "Pending Closure Evidence",
+        "Submitted for Verification",
+        "Revision Required",
+        "Verified",
+        "Closed",
+        "Overdue",
+        "On Hold",
+        "Cancelled",
+        "Risk Accepted"
       ],
-      "default": "open"
+      "default": "Awaiting Owner Response"
+    },
+    "gap_description": {
+      "type": "string"
+    },
+    "root_cause": {
+      "type": "string"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "milestones": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "status_history": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "status_reason": {
+      "type": "string"
+    },
+    "risk_acceptance_expiry": {
+      "type": "string",
+      "format": "date"
     }
   },
   "required": [

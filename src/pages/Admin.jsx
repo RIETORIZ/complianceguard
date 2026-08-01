@@ -21,6 +21,7 @@ const ROLES = [
 export default function Admin() {
   const [tab, setTab] = useState("seed");
   const [seeding, setSeeding] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const [progress, setProgress] = useState([]);
   const [trails, setTrails] = useState([]);
   const [loadingTrails, setLoadingTrails] = useState(false);
@@ -35,6 +36,20 @@ export default function Admin() {
     finally { setSeeding(false); }
   };
 
+  const migrateUnifiedWorkflow = async () => {
+    setMigrating(true);
+    try {
+      const response = await base44.functions.invoke("migrate-unified-audit-workflow", {});
+      const payload = response?.data || response;
+      const summary = payload?.summary || {};
+      alert(`Unified workflow migration completed.\nAudits: ${summary.audits || 0}\nEvidence requests: ${summary.evidence_requests || 0}\nSubmissions: ${summary.evidence_submissions || 0}\nMappings: ${summary.evidence_mappings || 0}\nFindings: ${summary.findings || 0}\nCorrection plans: ${summary.correction_plans || 0}`);
+    } catch (error) {
+      alert(`Workflow migration could not run: ${error.message}`);
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   const loadTrails = async () => {
     setLoadingTrails(true);
     try { setTrails(await base44.entities.AuditTrail.list("-timestamp", 100)); } catch (e) {}
@@ -46,7 +61,7 @@ export default function Admin() {
     try {
       const response = await base44.functions.invoke("compliance-automation", {});
       const payload = response?.data || response;
-      alert(`Compliance automation completed.\nEvidence overdue: ${payload?.summary?.evidence_requests_overdue || 0}\nEvidence expired: ${payload?.summary?.evidence_expired || 0}\nCorrective actions overdue: ${payload?.summary?.corrective_actions_overdue || 0}`);
+      alert(`Compliance automation completed.\nEvidence overdue: ${payload?.summary?.evidence_requests_overdue || 0}\nEvidence expired: ${payload?.summary?.evidence_expired || 0}\nControls reopened: ${payload?.summary?.controls_reopened_due_to_expired_evidence || 0}\nCorrective actions overdue: ${payload?.summary?.corrective_actions_overdue || 0}`);
     } catch (error) {
       alert(`Automation could not run: ${error.message}`);
     }
@@ -82,6 +97,9 @@ export default function Admin() {
           <div className="flex flex-wrap gap-2">
             <button onClick={runSeed} disabled={seeding} className="flex items-center gap-2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50">
               <Play className="w-4 h-4" /> {seeding ? "Seeding…" : "Run Seed"}
+            </button>
+            <button onClick={migrateUnifiedWorkflow} disabled={migrating} className="flex items-center gap-2 border border-blue-200 text-blue-800 text-sm px-4 py-2 rounded-lg disabled:opacity-50">
+              <ShieldCheck className="w-4 h-4" /> {migrating ? "Migrating…" : "Apply Unified Workflow to Existing Audits"}
             </button>
             <a href="/samples/technical-assessment-import.csv" download className="text-sm border border-slate-200 px-3 py-2 rounded-lg">Technical import sample</a>
             <a href="/samples/correction-plan-import.csv" download className="text-sm border border-slate-200 px-3 py-2 rounded-lg">Correction-plan sample</a>

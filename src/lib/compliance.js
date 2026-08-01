@@ -20,16 +20,20 @@ export const COMPLIANCE_STATUS_CONFIG = {
 };
 
 export const REVIEW_STATUS_CONFIG = {
-  "awaiting_review": { color: "bg-slate-100 text-slate-700", label: "Awaiting Review" },
+  "Pending Review": { color: "bg-slate-100 text-slate-700", label: "Pending Review" },
+  "Accepted": { color: "bg-emerald-100 text-emerald-800", label: "Accepted" },
+  "Accepted with Observation": { color: "bg-teal-100 text-teal-800", label: "Accepted with Observation" },
+  "Partially Sufficient": { color: "bg-orange-100 text-orange-800", label: "Partially Sufficient" },
+  "Revision Required": { color: "bg-amber-100 text-amber-800", label: "Revision Required" },
+  "Rejected": { color: "bg-red-100 text-red-800", label: "Rejected" },
+  "Expired": { color: "bg-red-100 text-red-800", label: "Expired" },
+  "Superseded": { color: "bg-slate-100 text-slate-500", label: "Superseded" },
+  // Legacy aliases remain visible while existing records are migrated.
+  "awaiting_review": { color: "bg-slate-100 text-slate-700", label: "Pending Review" },
   "accepted": { color: "bg-emerald-100 text-emerald-800", label: "Accepted" },
-  "accepted_with_observation": { color: "bg-teal-100 text-teal-800", label: "Accepted w/ Observation" },
-  "rejected": { color: "bg-red-100 text-red-800", label: "Rejected" },
-  "clarification_requested": { color: "bg-purple-100 text-purple-800", label: "Clarification Requested" },
-  "further_comments_requested": { color: "bg-purple-100 text-purple-800", label: "Further Comments Requested" },
-  "corrected_file_requested": { color: "bg-amber-100 text-amber-800", label: "Corrected File Requested" },
-  "updated_evidence_requested": { color: "bg-amber-100 text-amber-800", label: "Updated Evidence Requested" },
-  "formal_approval_requested": { color: "bg-blue-100 text-blue-800", label: "Formal Approval Requested" },
+  "accepted_with_observation": { color: "bg-teal-100 text-teal-800", label: "Accepted with Observation" },
   "partially_sufficient": { color: "bg-orange-100 text-orange-800", label: "Partially Sufficient" },
+  "rejected": { color: "bg-red-100 text-red-800", label: "Rejected" },
 };
 
 export const SEVERITY_CONFIG = {
@@ -80,6 +84,26 @@ export async function logAudit({ action, recordType, recordId = "", recordName =
   } catch (e) {
     // audit trail must never break the main flow
     console.error("Audit trail logging failed", e);
+  }
+}
+
+// Canonical status transition record. This remains separate from the immutable audit log.
+export async function recordStatusTransition({ entityType, entityId, previousStatus = "", newStatus, reason = "", auditId = "", auditControlId = "", changedAt = new Date().toISOString() }) {
+  try {
+    const me = await safeGetCurrentUser();
+    await base44.entities.StatusHistory.create({
+      entity_type: entityType,
+      entity_id: entityId,
+      audit_id: auditId || "",
+      audit_control_id: auditControlId || "",
+      previous_status: previousStatus || "",
+      new_status: newStatus,
+      changed_by: me?.id || "system",
+      changed_at: changedAt,
+      reason: reason || "",
+    });
+  } catch (e) {
+    console.error("Status history logging failed", e);
   }
 }
 
