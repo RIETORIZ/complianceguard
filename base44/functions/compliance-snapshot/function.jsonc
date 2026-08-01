@@ -1,0 +1,15 @@
+{
+  "name": "compliance-snapshot",
+  "entry": "index.ts",
+  "automations": [
+    {
+      "name": "Daily compliance snapshot",
+      "description": "Captures organization, framework, domain and site compliance trends.",
+      "type": "scheduled",
+      "schedule_mode": "recurring",
+      "schedule_type": "cron",
+      "cron_expression": "15 0 * * *",
+      "is_active": true
+    }
+  ]
+}
