@@ -118,6 +118,16 @@
           "user_condition": {
             "role": "Compliance Administrator"
           }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
         }
       ]
     },
@@ -205,6 +215,16 @@
         {
           "user_condition": {
             "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
           }
         }
       ]
