@@ -1,164 +1,98 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { logAudit, computeOverdueStatus } from "@/lib/compliance";
-import { FileText, Download, Database } from "lucide-react";
+import { FileText, Download, Database, Printer } from "lucide-react";
 
 export default function Reports() {
   const [audits, setAudits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
-  const [reportHtml, setReportHtml] = useState(null);
+  const [report, setReport] = useState(null);
+  const iframeRef = useRef(null);
 
-  const load = async () => {
-    try { setAudits(await base44.entities.Audit.list("-created_date", 200)); } catch (e) {}
-    finally { setLoading(false); }
-  };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    base44.entities.Audit.list("-created_date", 500).then(setAudits).catch(console.error).finally(() => setLoading(false));
+  }, []);
 
   const generateReport = async (auditId) => {
     setGenerating(auditId);
     try {
-      const [audit, controls, requests, submissions, findings, plans, framework, domains, owners] = await Promise.all([
-        base44.entities.Audit.get(auditId),
+      const audit = await base44.entities.Audit.get(auditId);
+      const [controls, requests, findings, plans, owners, domains, framework] = await Promise.all([
         base44.entities.AuditControl.filter({ audit_id: auditId }),
         base44.entities.EvidenceRequest.filter({ audit_id: auditId }),
-        base44.entities.EvidenceSubmission.filter({ evidence_request_id: { $in: (await base44.entities.EvidenceRequest.filter({ audit_id: auditId })).map((r) => r.id) } }),
         base44.entities.Finding.filter({ source_audit_id: auditId }),
         base44.entities.CorrectionPlan.filter({ audit_id: auditId }),
+        base44.entities.Owner.list("full_name", 1000),
+        audit.framework_id ? base44.entities.Domain.filter({ framework_id: audit.framework_id }) : base44.entities.Domain.list("name", 1000),
         audit.framework_id ? base44.entities.Framework.get(audit.framework_id) : null,
-        base44.entities.Domain.filter({ framework_id: audit.framework_id }),
-        base44.entities.Owner.list("-created_date", 200),
       ]);
-      const ownerName = (id) => owners.find((o) => o.id === id)?.full_name || "—";
-      const reqsFor = (acId) => requests.filter((r) => r.audit_control_id === acId);
-      const subsFor = (reqId) => submissions.filter((s) => s.evidence_request_id === reqId).sort((a, b) => b.version - a.version);
-      const implemented = controls.filter((c) => c.compliance_status === "Implemented").length;
-      const total = controls.filter((c) => c.compliance_status !== "Not Applicable").length;
-      const pct = total > 0 ? Math.round((implemented / total) * 100) : 0;
-      const overdueReqs = requests.filter((r) => computeOverdueStatus(r) === "Overdue");
-
-      // group controls by domain
-      const byDomain = {};
-      controls.forEach((c) => { const k = c.domain_id || "ungrouped"; byDomain[k] = byDomain[k] || []; byDomain[k].push(c); });
-
-      const html = `<!doctype html><html><head><meta charset="utf-8"><title>${audit.name} — Audit Report</title>
-<style>
-body{font-family:system-ui,sans-serif;color:#1e293b;max-width:900px;margin:0 auto;padding:40px;line-height:1.6}
-h1{font-size:28px;border-bottom:3px solid #0f172a;padding-bottom:10px}
-h2{font-size:20px;margin-top:32px;border-bottom:1px solid #cbd5e1;padding-bottom:6px}
-h3{font-size:15px;margin-top:24px}
-.cover{text-align:center;padding:80px 0;background:#0f172a;color:#fff;margin:-40px -40px 30px}
-.cover h1{border:none;color:#fff;font-size:34px}
-.cover .sub{color:#94a3b8;margin-top:8px}
-.page-break{page-break-before:always}
-.badge{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
-.stat{display:inline-block;margin-right:24px;text-align:center}
-.stat .num{font-size:24px;font-weight:700}
-.stat .lbl{font-size:11px;color:#64748b}
-table{width:100%;border-collapse:collapse;margin:10px 0}
-th,td{text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:12px}
-th{background:#f1f5f9}
-.control-card{border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin:12px 0}
-</style></head><body>
-<div class="cover"><h1>${audit.name}</h1><div class="sub">${audit.audit_type} · ${framework?.code || ""} · ${audit.audit_year}</div><div class="sub">Generated ${new Date().toLocaleString()}</div></div>
-<h2>1. Executive Summary</h2>
-<p>This report presents the findings of the ${audit.name} assessment against the ${framework?.name || audit.framework_code} framework. The audit covered ${controls.length} controls with ${requests.length} evidence requests.</p>
-<div><span class="stat"><div class="num">${pct}%</div><div class="lbl">Overall Compliance</div></span>
-<span class="stat"><div class="num">${implemented}/${total}</div><div class="lbl">Implemented</div></span>
-<span class="stat"><div class="num">${overdueReqs.length}</div><div class="lbl">Overdue</div></span>
-<span class="stat"><div class="num">${findings.length}</div><div class="lbl">Findings</div></span></div>
-<h2>2. Audit Scope</h2><p>${audit.scope || "—"}</p>
-<h2>3. Overall Compliance Result</h2><p>Overall compliance: <strong>${pct}%</strong></p>
-<h2>4. Compliance by Domain</h2>
-<table><tr><th>Domain</th><th>Controls</th><th>Implemented</th><th>Compliance</th></tr>
-${Object.entries(byDomain).map(([dId, ctrls]) => { const dn = domains.find((d) => d.id === dId)?.name || "—"; const imp = ctrls.filter((c) => c.compliance_status === "Implemented").length; const t = ctrls.filter((c) => c.compliance_status !== "Not Applicable").length; return `<tr><td>${dn}</td><td>${ctrls.length}</td><td>${imp}</td><td>${t > 0 ? Math.round(imp / t * 100) : 0}%</td></tr>`; }).join("")}</table>
-<h2>5. Evidence Submission Summary</h2>
-<table><tr><th>Evidence</th><th>Status</th><th>Review</th><th>Owner</th><th>Due</th></tr>
-${requests.map((r) => `<tr><td>${r.title}</td><td>${computeOverdueStatus(r)}</td><td>${r.review_status}</td><td>${(r.assigned_owner_ids || []).map(ownerName).join(", ")}</td><td>${r.due_date || "—"}</td></tr>`).join("")}</table>
-<h2>6. Overdue Evidence Summary</h2>
-${overdueReqs.length === 0 ? "<p>No overdue evidence.</p>" : `<ul>${overdueReqs.map((r) => `<li>${r.title} — due ${r.due_date}</li>`).join("")}</ul>`}
-<div class="page-break"></div>
-<h2>7. Control Details</h2>
-${controls.map((c, i) => { const rqs = reqsFor(c.id); return `<div class="control-card"><h3>${c.control_number || ""} ${c.control_title}</h3>
-<p><strong>Compliance:</strong> ${c.compliance_status} · <strong>Owners:</strong> ${(c.control_level_owners || []).map(ownerName).join(", ") || "—"} · <strong>Due:</strong> ${c.due_date || "—"}</p>
-${c.auditor_comments ? `<p><em>Auditor comments:</em> ${c.auditor_comments}</p>` : ""}
-${rqs.length ? `<table><tr><th>Evidence</th><th>Status</th><th>Received</th><th>Files</th></tr>${rqs.map((r) => { const ss = subsFor(r.id); return `<tr><td>${r.title}</td><td>${computeOverdueStatus(r)}</td><td>${r.received_date ? new Date(r.received_date).toLocaleDateString() : "—"}</td><td>${ss.map((s) => `<a href="${s.file_url}" target="_blank">${s.display_title} (v${s.version})</a>`).join(", ") || "—"}</td></tr>`; }).join("")}</table>` : "<p>No evidence requests.</p>"}
-${findings.find((f) => f.audit_control_id === c.id) ? `<p><strong>Finding:</strong> ${findings.find((f) => f.audit_control_id === c.id).title} (${findings.find((f) => f.audit_control_id === c.id).status})</p>` : ""}
-${plans.find((p) => p.control_id === c.control_id) ? `<p><strong>Corrective action:</strong> ${plans.find((p) => p.control_id === c.control_id).corrective_action} (${plans.find((p) => p.control_id === c.control_id).status}, ${plans.find((p) => p.control_id === c.control_id).completion_percentage}%)</p>` : ""}
-</div>`; }).join("")}
-<h2>8. Findings Summary</h2>
-${findings.length === 0 ? "<p>No findings.</p>" : `<table><tr><th>Finding</th><th>Severity</th><th>Status</th><th>Due</th></tr>${findings.map((f) => `<tr><td>${f.title}</td><td>${f.severity}</td><td>${f.status}</td><td>${f.due_date || "—"}</td></tr>`).join("")}</table>`}
-<h2>9. Correction Plan Summary</h2>
-${plans.length === 0 ? "<p>No corrective actions.</p>" : `<table><tr><th>Action</th><th>Priority</th><th>Progress</th><th>Status</th></tr>${plans.map((p) => `<tr><td>${p.corrective_action}</td><td>${p.priority}</td><td>${p.completion_percentage}%</td><td>${p.status}</td></tr>`).join("")}</table>`}
-<h2>10. Key Risks</h2><ul>${findings.filter((f) => f.risk_rating === "high" || f.risk_rating === "critical").map((f) => `<li>${f.title} (${f.risk_rating})</li>`).join("") || "<li>No high-risk findings.</li>"}</ul>
-<h2>11. Recommendations</h2><p>Address all overdue evidence requests, remediate high-severity findings, and complete corrective actions before target dates.</p>
-<h2>12. Audit Conclusion</h2><p>The ${audit.name} assessment achieved ${pct}% overall compliance. ${overdueReqs.length > 0 ? `${overdueReqs.length} evidence items are overdue and require immediate attention. ` : ""}${findings.length} findings were identified and require remediation.</p>
-<p style="margin-top:40px;color:#94a3b8;font-size:11px">Generated by Compliance Management Tool. Evidence preview links are access-controlled; unauthorized users cannot view restricted evidence.</p>
-</body></html>`;
-      await logAudit({ action: "report_generated", recordType: "Audit", recordId: auditId, recordName: audit.name, comment: "HTML audit report generated" });
-      setReportHtml(html);
-    } catch (e) { alert("Report generation failed: " + e.message); }
+      const submissions = requests.length ? await base44.entities.EvidenceSubmission.filter({ evidence_request_id: { $in: requests.map((request) => request.id) } }) : [];
+      const mappings = submissions.length ? await base44.entities.EvidenceMapping.filter({ evidence_submission_id: { $in: submissions.map((submission) => submission.id) } }) : [];
+      const html = buildAuditReport({ audit, framework, domains, controls, requests, submissions, mappings, findings, plans, owners, origin: window.location.origin });
+      await logAudit({ action: "report_generated", recordType: "Audit", recordId: auditId, recordName: audit.name, comment: "Presentation-style HTML/PDF report generated", newValue: { controls: controls.length, requests: requests.length, findings: findings.length, generated_at: new Date().toISOString() } });
+      setReport({ html, audit });
+    } catch (error) { alert(`Report generation failed: ${error.message}`); }
     finally { setGenerating(null); }
   };
 
   const downloadReport = () => {
-    const blob = new Blob([reportHtml], { type: "text/html" });
+    const blob = new Blob([report.html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "audit-report.html"; a.click();
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${safeFileName(report.audit.name)}-audit-report.html`;
+    anchor.click();
     URL.revokeObjectURL(url);
   };
 
-  if (loading) return <div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /></div>;
+  const printReport = () => iframeRef.current?.contentWindow?.print();
 
-  return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Reports</h1>
-        <p className="text-sm text-slate-500 mt-1">Generate presentation-style audit reports (HTML/PDF). Extensible to PPTX. Evidence preview links are access-controlled.</p>
-      </div>
-
-      {!reportHtml ? (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-5 py-3 border-b border-slate-100 text-sm font-medium text-slate-700">Select an audit to generate its report</div>
-          <div className="divide-y divide-slate-100">
-            {audits.map((a) => (
-              <div key={a.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50">
-                <div>
-                  <div className="text-sm font-medium text-slate-900">{a.name}</div>
-                  <div className="text-xs text-slate-500">{a.audit_type} · {a.framework_code}</div>
-                </div>
-                <button onClick={() => generateReport(a.id)} disabled={generating} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">
-                  <FileText className="w-4 h-4" /> {generating === a.id ? "Generating…" : "Generate"}
-                </button>
-              </div>
-            ))}
-            {audits.length === 0 && <div className="p-8 text-center text-sm text-slate-400">No audits available.</div>}
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setReportHtml(null)} className="text-sm text-slate-600 hover:text-slate-900">← Back to reports</button>
-            <button onClick={downloadReport} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg"><Download className="w-4 h-4" /> Download HTML</button>
-          </div>
-          <iframe srcDoc={reportHtml} className="w-full h-[70vh] bg-white border border-slate-200 rounded-xl" title="Audit Report" />
-        </div>
-      )}
-
-      {/* Power BI reporting model */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
-        <div className="flex items-center gap-2 mb-3"><Database className="w-5 h-5 text-slate-700" /><h3 className="font-semibold text-slate-900">Power BI Reporting Model</h3></div>
-        <p className="text-sm text-slate-600 mb-3">The platform exposes all entities as stable-ID relational tables. Connect Power BI via the Base44 API/OData endpoint using your app's API key. Recommended star schema:</p>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
-          {["Framework", "Domain", "Control", "ExpectedEvidence", "EvidenceCondition", "Audit", "AuditControl", "EvidenceRequest", "EvidenceSubmission", "Finding", "CorrectionPlan", "Owner", "OrgUnit", "Site", "System", "Notification", "AuditTrail"].map((t) => (
-            <div key={t} className="border border-slate-200 rounded-lg px-2 py-1.5 text-slate-700 font-mono">{t}</div>
-          ))}
-        </div>
-        <div className="mt-3 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
-          <strong>Relational keys:</strong> Framework.id → Domain.framework_id → Control.(framework_id, domain_id) → ExpectedEvidence.control_id → EvidenceCondition.expected_evidence_id. Audit.id → AuditControl.audit_id → EvidenceRequest.audit_control_id → EvidenceSubmission.evidence_request_id. Owner.id ↔ OrgUnit (sector/department/division). All tables include id, created_date, updated_date, created_by_id.
-        </div>
-      </div>
-    </div>
-  );
+  if (loading) return <Spinner />;
+  return <div className="space-y-6 max-w-6xl mx-auto">
+    <div><h1 className="text-2xl font-bold text-slate-900">Reports</h1><p className="text-sm text-slate-500 mt-1">Generate presentation-style HTML reports and print them securely to PDF. Every control receives a dedicated page.</p></div>
+    {!report ? <AuditSelector audits={audits} generating={generating} onGenerate={generateReport} /> : <div className="space-y-3"><div className="flex items-center justify-between flex-wrap gap-2"><button onClick={() => setReport(null)} className="text-sm text-slate-600">← Back to reports</button><div className="flex gap-2"><button onClick={printReport} className="flex items-center gap-1.5 text-sm border px-3 py-2 rounded-lg"><Printer className="w-4 h-4" />Print / Save PDF</button><button onClick={downloadReport} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg"><Download className="w-4 h-4" />Download HTML</button></div></div><iframe ref={iframeRef} srcDoc={report.html} className="w-full h-[75vh] bg-white border rounded-xl" title="Audit Report" sandbox="allow-popups allow-popups-to-escape-sandbox" /></div>}
+    <PowerBiModel />
+  </div>;
 }
+
+function AuditSelector({ audits, generating, onGenerate }) { return <div className="bg-white rounded-xl border overflow-hidden"><div className="px-5 py-3 border-b text-sm font-medium">Select an audit</div><div className="divide-y">{audits.map((audit) => <div key={audit.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50"><div><div className="text-sm font-medium">{audit.name}</div><div className="text-xs text-slate-500">{audit.audit_type} · {audit.framework_code} · {audit.status}</div></div><button onClick={() => onGenerate(audit.id)} disabled={!!generating} className="flex gap-1.5 text-sm bg-slate-900 text-white px-3 py-1.5 rounded-lg disabled:opacity-50"><FileText className="w-4 h-4" />{generating === audit.id ? "Generating…" : "Generate"}</button></div>)}{!audits.length && <div className="p-8 text-center text-sm text-slate-400">No audits available.</div>}</div></div>; }
+
+function PowerBiModel() { const datasets = ["audits", "frameworks", "domains", "controls", "audit_controls", "expected_evidence", "evidence_conditions", "evidence_requests", "evidence_submissions", "evidence_mappings", "owners", "owner_groups", "organizational_units", "sites", "systems", "findings", "correction_plans", "notifications", "audit_trail"]; return <div className="bg-white rounded-xl border p-5"><div className="flex items-center gap-2 mb-3"><Database className="w-5 h-5" /><h3 className="font-semibold">Power BI Reporting API</h3></div><p className="text-sm text-slate-600">Use the authenticated <code>reporting-export</code> backend function with a dataset name. Responses include <code>id</code> as the stable key, <code>updated_date</code> for incremental refresh, export timestamp, row count, and rows.</p><div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">{datasets.map((dataset) => <div key={dataset} className="border rounded-lg px-2 py-1.5 text-xs font-mono">{dataset}</div>)}</div><div className="mt-3 text-xs bg-slate-50 rounded-lg p-3"><strong>Core relationships:</strong> Framework → Domain → Control → ExpectedEvidence → EvidenceCondition; Audit → AuditControl → EvidenceRequest → EvidenceSubmission → EvidenceMapping; Finding → CorrectionPlan; Owner → OrgUnit/Site/System.</div></div>; }
+
+function buildAuditReport({ audit, framework, domains, controls, requests, submissions, mappings, findings, plans, owners, origin }) {
+  const ownerName = (id) => owners.find((owner) => owner.id === id)?.full_name || "—";
+  const requestsFor = (auditControlId) => requests.filter((request) => request.audit_control_id === auditControlId);
+  const submissionsFor = (requestId) => submissions.filter((submission) => submission.evidence_request_id === requestId || mappings.some((mapping) => mapping.evidence_request_id === requestId && mapping.evidence_submission_id === submission.id)).sort((a, b) => Number(b.version) - Number(a.version));
+  const included = controls.filter((control) => control.compliance_status !== "Not Applicable");
+  const score = included.reduce((sum, control) => sum + (control.compliance_status === "Implemented" ? 1 : control.compliance_status === "Partially Implemented" ? 0.5 : 0), 0);
+  const compliance = included.length ? Math.round(score / included.length * 100) : 0;
+  const overdue = requests.filter((request) => computeOverdueStatus(request) === "Overdue");
+  const accepted = requests.filter((request) => ["accepted", "accepted_with_observation"].includes(request.review_status));
+  const byDomain = Object.groupBy ? Object.groupBy(controls, (control) => control.domain_id || "ungrouped") : controls.reduce((groups, control) => ({ ...groups, [control.domain_id || "ungrouped"]: [...(groups[control.domain_id || "ungrouped"] || []), control] }), {});
+  const highRisks = findings.filter((finding) => ["high", "critical"].includes(finding.risk_rating));
+  const controlPages = controls.map((control) => {
+    const controlRequests = requestsFor(control.id);
+    const controlFinding = findings.filter((finding) => finding.audit_control_id === control.id);
+    const controlPlans = plans.filter((plan) => plan.control_id === control.control_id);
+    const evidenceRows = controlRequests.map((request) => {
+      const files = submissionsFor(request.id);
+      const links = files.map((submission) => `<a href="${escapeAttribute(`${origin}/evidence/${submission.id}`)}">${escapeHtml(submission.display_title)} (v${escapeHtml(submission.version)})</a>`).join("<br>") || "—";
+      return `<tr><td>${escapeHtml(request.title)}</td><td>${escapeHtml(computeOverdueStatus(request))}</td><td>${escapeHtml(request.review_status || "—")}</td><td>${escapeHtml(request.request_date || "—")}</td><td>${escapeHtml(request.due_date || "—")}</td><td>${escapeHtml(formatDate(request.received_date))}</td><td>${links}</td></tr>`;
+    }).join("");
+    return `<section class="page control-page"><div class="eyebrow">Control assessment</div><h1>${escapeHtml(control.control_number || "Custom")} — ${escapeHtml(control.control_title)}</h1><div class="grid"><div><strong>Audit</strong><br>${escapeHtml(audit.name)}</div><div><strong>Framework</strong><br>${escapeHtml(audit.framework_code || "Custom")}</div><div><strong>Domain</strong><br>${escapeHtml(domains.find((domain) => domain.id === control.domain_id)?.name || "—")}</div><div><strong>Compliance status</strong><br>${escapeHtml(control.compliance_status)}</div><div><strong>Control owners</strong><br>${escapeHtml((control.control_level_owners || []).map(ownerName).join(", ") || "—")}</div><div><strong>Control closure</strong><br>${control.is_closed ? `Closed ${escapeHtml(control.closure_date || "")}` : "Open"}</div></div><h2>Control description</h2><p>${escapeHtml(control.control_title)}</p><h2>Evidence requests and files</h2>${evidenceRows ? `<table><thead><tr><th>Evidence</th><th>Request status</th><th>Review</th><th>Requested</th><th>Due</th><th>Received</th><th>Secure preview</th></tr></thead><tbody>${evidenceRows}</tbody></table>` : "<p>No evidence requests.</p>"}<p><strong>Evidence folder:</strong> <a href="${escapeAttribute(`${origin}/audits/${audit.id}#control-${control.id}`)}">Open control workspace</a></p><h2>Auditor comments</h2><p>${escapeHtml(control.auditor_comments || "—")}</p><h2>Findings and corrective actions</h2>${controlFinding.length ? controlFinding.map((finding) => `<p><strong>${escapeHtml(finding.title)}</strong> — ${escapeHtml(finding.severity)} / ${escapeHtml(finding.status)}</p>`).join("") : "<p>No finding.</p>"}${controlPlans.length ? controlPlans.map((plan) => `<p><strong>${escapeHtml(plan.corrective_action)}</strong> — ${escapeHtml(plan.status)} / ${escapeHtml(plan.completion_percentage)}%</p>`).join("") : "<p>No corrective action.</p>"}</section>`;
+  }).join("");
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>${escapeHtml(audit.name)} — Audit Report</title><style>${REPORT_CSS}</style></head><body><section class="cover page"><div><div class="eyebrow">Compliance Management Tool</div><h1>${escapeHtml(audit.name)}</h1><p>${escapeHtml(audit.audit_type)} · ${escapeHtml(framework?.code || audit.framework_code || "Custom")} · ${escapeHtml(audit.audit_year)}</p><p>Generated ${escapeHtml(new Date().toLocaleString())}</p></div></section><section class="page"><h1>1. Executive Summary</h1><p>The assessment covered ${controls.length} controls and ${requests.length} evidence requests. Compliance is ${compliance}% using implemented controls at full weight and partially implemented controls at half weight.</p><div class="stats"><div><b>${compliance}%</b><span>Compliance</span></div><div><b>${accepted.length}/${requests.length}</b><span>Accepted evidence</span></div><div><b>${overdue.length}</b><span>Overdue</span></div><div><b>${findings.length}</b><span>Findings</span></div></div><h1>2. Audit Scope</h1><p>${escapeHtml(audit.scope || "Not documented")}</p><h1>3. Overall Compliance Result</h1>${statusTable(controls)}<h1>4. Compliance by Domain</h1><table><thead><tr><th>Domain</th><th>Controls</th><th>Implemented</th><th>Partial</th><th>Score</th></tr></thead><tbody>${Object.entries(byDomain).map(([domainId, domainControls]) => { const applicable = domainControls.filter((control) => control.compliance_status !== "Not Applicable"); const weighted = applicable.reduce((sum, control) => sum + (control.compliance_status === "Implemented" ? 1 : control.compliance_status === "Partially Implemented" ? 0.5 : 0), 0); return `<tr><td>${escapeHtml(domains.find((domain) => domain.id === domainId)?.name || "—")}</td><td>${domainControls.length}</td><td>${domainControls.filter((control) => control.compliance_status === "Implemented").length}</td><td>${domainControls.filter((control) => control.compliance_status === "Partially Implemented").length}</td><td>${applicable.length ? Math.round(weighted / applicable.length * 100) : 0}%</td></tr>`; }).join("")}</tbody></table><h1>5. Evidence Submission Summary</h1>${evidenceSummary(requests)}<h1>6. Overdue Evidence Summary</h1>${overdue.length ? `<ul>${overdue.map((request) => `<li>${escapeHtml(request.title)} — due ${escapeHtml(request.due_date)}</li>`).join("")}</ul>` : "<p>No overdue evidence.</p>"}</section>${controlPages}<section class="page"><h1>8. Findings Summary</h1>${findingsTable(findings)}<h1>9. Correction-Plan Summary</h1>${plansTable(plans)}<h1>10. Key Risks</h1>${highRisks.length ? `<ul>${highRisks.map((finding) => `<li>${escapeHtml(finding.title)} — ${escapeHtml(finding.risk_rating)}</li>`).join("")}</ul>` : "<p>No open high or critical risk recorded.</p>"}<h1>11. Recommendations</h1><ol><li>Resolve overdue evidence and validate the correct organizational, site, and system scope.</li><li>Prioritize high and critical findings and overdue corrective actions.</li><li>Renew expiring evidence before dependent controls lose support.</li><li>Retain independent review decisions when one master evidence file supports multiple controls.</li></ol><h1>12. Audit Conclusion</h1><p>${escapeHtml(audit.name)} achieved ${compliance}% weighted compliance. ${overdue.length} evidence request(s) are overdue, ${findings.filter((finding) => !["verified_closed", "accepted"].includes(finding.status)).length} finding(s) remain open, and ${plans.filter((plan) => plan.status !== "closed").length} corrective action(s) remain open.</p><footer>Secure preview links require authenticated, authorized access and enforce evidence confidentiality. Report generation is recorded in the immutable audit trail.</footer></section></body></html>`;
+}
+
+function statusTable(controls) { const statuses = ["Implemented", "Partially Implemented", "Not Implemented", "Not Applicable", "Under Evaluation"]; return `<table><thead><tr>${statuses.map((status) => `<th>${status}</th>`).join("")}</tr></thead><tbody><tr>${statuses.map((status) => `<td>${controls.filter((control) => control.compliance_status === status).length}</td>`).join("")}</tr></tbody></table>`; }
+function evidenceSummary(requests) { const statuses = ["Requested", "Received", "Partially Received", "Require Further Comments", "Not Applicable", "Not Available", "Overdue"]; return `<table><thead><tr>${statuses.map((status) => `<th>${status}</th>`).join("")}</tr></thead><tbody><tr>${statuses.map((status) => `<td>${requests.filter((request) => computeOverdueStatus(request) === status).length}</td>`).join("")}</tr></tbody></table>`; }
+function findingsTable(findings) { return findings.length ? `<table><thead><tr><th>Finding</th><th>Severity</th><th>Risk</th><th>Owner</th><th>Due</th><th>Status</th></tr></thead><tbody>${findings.map((finding) => `<tr><td>${escapeHtml(finding.title)}</td><td>${escapeHtml(finding.severity)}</td><td>${escapeHtml(finding.risk_rating)}</td><td>${escapeHtml(finding.owner_id || "—")}</td><td>${escapeHtml(finding.due_date || "—")}</td><td>${escapeHtml(finding.status)}</td></tr>`).join("")}</tbody></table>` : "<p>No findings.</p>"; }
+function plansTable(plans) { return plans.length ? `<table><thead><tr><th>Corrective action</th><th>Priority</th><th>Risk</th><th>Target</th><th>Progress</th><th>Status</th></tr></thead><tbody>${plans.map((plan) => `<tr><td>${escapeHtml(plan.corrective_action)}</td><td>${escapeHtml(plan.priority)}</td><td>${escapeHtml(plan.risk)}</td><td>${escapeHtml(plan.target_date || "—")}</td><td>${escapeHtml(plan.completion_percentage)}%</td><td>${escapeHtml(plan.status)}</td></tr>`).join("")}</tbody></table>` : "<p>No corrective actions.</p>"; }
+function escapeHtml(value) { return String(value ?? "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character])); }
+function escapeAttribute(value) { return escapeHtml(value); }
+function formatDate(value) { return value ? new Date(value).toLocaleDateString() : "—"; }
+function safeFileName(value) { return String(value || "audit").replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, ""); }
+function Spinner() { return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /></div>; }
+
+const REPORT_CSS = `@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#172033;margin:0;font-size:12px;line-height:1.45}.page{page-break-before:always;min-height:260mm;padding:10mm}.page:first-child{page-break-before:auto}.cover{background:#0f172a;color:white;display:flex;align-items:center;justify-content:center;text-align:center}.cover h1{font-size:34px;margin:15px 0}.eyebrow{text-transform:uppercase;letter-spacing:2px;font-size:10px;color:#64748b}.cover .eyebrow{color:#94a3b8}h1{font-size:22px;border-bottom:2px solid #0f172a;padding-bottom:6px;margin:20px 0 10px}h2{font-size:14px;margin:18px 0 6px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:20px 0}.stats div{background:#f1f5f9;padding:12px;border-radius:8px;text-align:center}.stats b{font-size:22px;display:block}.stats span{font-size:10px;color:#64748b}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;background:#f8fafc;padding:12px;border-radius:8px}table{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:10px}th,td{border:1px solid #dbe3ec;padding:5px;vertical-align:top;text-align:left}th{background:#eef2f7}a{color:#145da0;word-break:break-all}footer{margin-top:40px;color:#64748b;font-size:9px;border-top:1px solid #dbe3ec;padding-top:8px}@media print{a{color:#000;text-decoration:none}.page{padding:0}}`;
