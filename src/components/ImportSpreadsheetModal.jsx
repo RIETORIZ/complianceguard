@@ -56,12 +56,13 @@ export function ImportSpreadsheetModal({ auditId, audit, owners, onClose, onDone
     if (!selected) return;
     setFile(selected); setErrors([]); setWarnings([]);
     try {
+      /** @type {any[][]} */
       let matrix;
       if (selected.name.toLowerCase().endsWith(".csv")) {
         const text = await selected.text();
         matrix = parseCsv(text);
       } else {
-        matrix = await readXlsxFile(selected);
+        matrix = /** @type {any[][]} */ (await readXlsxFile(selected));
       }
       if (!matrix?.length || matrix.length < 2) throw new Error("No data rows were found in the first worksheet.");
       const headers = matrix[0].map((value, index) => String(value || `Column ${index + 1}`).trim());
