@@ -119,10 +119,269 @@
       "items": {
         "type": "object"
       }
+    },
+    "description": {
+      "type": "string"
+    },
+    "evidence_type": {
+      "type": "string"
+    },
+    "responsible_department_id": {
+      "type": "string"
+    },
+    "related_system_id": {
+      "type": "string"
+    },
+    "related_asset": {
+      "type": "string"
+    },
+    "related_site_id": {
+      "type": "string"
+    },
+    "evidence_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "document_version": {
+      "type": "string"
+    },
+    "approving_authority": {
+      "type": "string"
+    },
+    "change_description": {
+      "type": "string"
+    },
+    "superseded_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "awaiting_review",
+        "accepted",
+        "accepted_with_observation",
+        "rejected",
+        "clarification_requested",
+        "further_comments_requested",
+        "corrected_file_requested",
+        "updated_evidence_requested",
+        "formal_approval_requested",
+        "partially_sufficient"
+      ],
+      "default": "awaiting_review"
+    },
+    "review_comments": {
+      "type": "string"
+    },
+    "rejection_reason": {
+      "type": "string"
+    },
+    "reviewed_by_id": {
+      "type": "string"
+    },
+    "acceptance_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "rejection_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "validity_status": {
+      "type": "string",
+      "enum": [
+        "Valid",
+        "Expiring Soon",
+        "Expired",
+        "Pending Renewal",
+        "Superseded",
+        "Under Review"
+      ],
+      "default": "Under Review"
+    },
+    "malware_scan_status": {
+      "type": "string",
+      "enum": [
+        "not_scanned",
+        "pending",
+        "clean",
+        "infected",
+        "failed"
+      ],
+      "default": "not_scanned"
     }
   },
   "required": [
     "evidence_request_id",
     "display_title"
-  ]
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditee"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Control Owner"
+          }
+        }
+      ]
+    },
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditee"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Control Owner"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Department Manager"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Division Manager"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Sector Manager"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "External Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Executive Viewer"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditee"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Control Owner"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        }
+      ]
+    }
+  }
 }

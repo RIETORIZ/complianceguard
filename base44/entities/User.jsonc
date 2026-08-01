@@ -2,11 +2,58 @@
   "properties": {
     "role": {
       "type": "string",
-      "description": "The role of the user in the app",
+      "description": "Enterprise application role",
       "enum": [
         "admin",
-        "user"
-      ]
+        "user",
+        "System Administrator",
+        "Compliance Administrator",
+        "Compliance Officer",
+        "Auditor",
+        "Auditee",
+        "Control Owner",
+        "Department Manager",
+        "Division Manager",
+        "Sector Manager",
+        "External Auditor",
+        "Executive Viewer"
+      ],
+      "default": "Auditee"
+    },
+    "owner_id": {
+      "type": "string",
+      "description": "Linked Owner record"
+    },
+    "sector_id": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "division_id": {
+      "type": "string"
+    },
+    "site_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "system_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_clearance": {
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "default": "internal"
     }
   },
   "required": [

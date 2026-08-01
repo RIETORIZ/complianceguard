@@ -56,5 +56,163 @@
     "evidence_submission_id",
     "evidence_request_id",
     "audit_control_id"
-  ]
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditee"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Control Owner"
+          }
+        }
+      ]
+    },
+    "read": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "user"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditee"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Control Owner"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Department Manager"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Division Manager"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Sector Manager"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "External Auditor"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Executive Viewer"
+          }
+        }
+      ]
+    },
+    "update": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        }
+      ]
+    },
+    "delete": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        }
+      ]
+    }
+  }
 }
