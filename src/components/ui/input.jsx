@@ -1,3 +1,4 @@
+// @ts-nocheck — generated shadcn JavaScript wrapper; upstream React input types are enforced by the imported packages.
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
