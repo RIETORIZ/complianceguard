@@ -1,0 +1,4 @@
+{
+  "name": "reporting-export",
+  "entry": "index.ts"
+}
