@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { seedDatabase } from "@/lib/seed";
-import { computeOverdueStatus } from "@/lib/compliance";
 import { Play, History, ShieldCheck, Database, Lock, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -44,16 +43,13 @@ export default function Admin() {
   useEffect(() => { if (tab === "trail") loadTrails(); }, [tab]);
 
   const processOverdue = async () => {
-    const reqs = await base44.entities.EvidenceRequest.list("-created_date", 500);
-    let updated = 0;
-    for (const r of reqs) {
-      const computed = computeOverdueStatus(r);
-      if (computed === "Overdue" && r.status !== "Overdue") {
-        await base44.entities.EvidenceRequest.update(r.id, { status: "Overdue", status_history: [...(r.status_history || []), { status: "Overdue", changed_by: "system", changed_at: new Date().toISOString(), comment: "Auto-overdue: due date passed" }] });
-        updated++;
-      }
+    try {
+      const response = await base44.functions.invoke("compliance-automation", {});
+      const payload = response?.data || response;
+      alert(`Compliance automation completed.\nEvidence overdue: ${payload?.summary?.evidence_requests_overdue || 0}\nEvidence expired: ${payload?.summary?.evidence_expired || 0}\nCorrective actions overdue: ${payload?.summary?.corrective_actions_overdue || 0}`);
+    } catch (error) {
+      alert(`Automation could not run: ${error.message}`);
     }
-    alert(`Processed overdue. ${updated} request(s) marked Overdue.`);
   };
 
   const tabs = [
@@ -83,9 +79,13 @@ export default function Admin() {
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <h3 className="font-semibold text-slate-900 mb-2">Seed Demonstration Data</h3>
           <p className="text-sm text-slate-600 mb-4">Loads realistic data: 7 NCA frameworks, ECC controls/evidence/conditions, 2 OTCC site assessments, Internal Audit, Technical Assessment, Correction Plan, owners in every org tier, evidence in every request status, versioned evidence, reused evidence, overdue items, findings and corrective actions.</p>
-          <button onClick={runSeed} disabled={seeding} className="flex items-center gap-2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50">
-            <Play className="w-4 h-4" /> {seeding ? "Seeding…" : "Run Seed"}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={runSeed} disabled={seeding} className="flex items-center gap-2 bg-slate-900 text-white text-sm px-4 py-2 rounded-lg disabled:opacity-50">
+              <Play className="w-4 h-4" /> {seeding ? "Seeding…" : "Run Seed"}
+            </button>
+            <a href="/samples/technical-assessment-import.csv" download className="text-sm border border-slate-200 px-3 py-2 rounded-lg">Technical import sample</a>
+            <a href="/samples/correction-plan-import.csv" download className="text-sm border border-slate-200 px-3 py-2 rounded-lg">Correction-plan sample</a>
+          </div>
           {progress.length > 0 && (
             <div className="mt-4 space-y-1">
               {progress.map((p, i) => (
@@ -140,11 +140,11 @@ export default function Admin() {
           <h3 className="font-semibold text-slate-900">Security Considerations</h3>
           <ul className="list-disc list-inside space-y-1.5">
             <li><strong>Authentication:</strong> Platform-managed secure auth (sessions, token rotation). Enterprise SSO via Google OAuth available.</li>
-            <li><strong>Role-based access control:</strong> 11 roles enforced at API and interface level (see Roles tab).</li>
+            <li><strong>Role-based access control:</strong> 11 roles enforced through interface permissions, entity row-level policies, protected regulatory fields, and backend evidence/reporting gateways.</li>
             <li><strong>Least privilege:</strong> Access scoped by audit, framework, sector, department, division, site, system, and evidence confidentiality classification.</li>
             <li><strong>File validation:</strong> File-type and size validation on upload; meaningful-name detection warns on poor file names.</li>
             <li><strong>Malware scanning:</strong> Integration point available for AV scanning on upload (configure in production).</li>
-            <li><strong>Secure download links:</strong> Evidence files served via signed, access-controlled URLs; unauthorized users cannot view restricted evidence.</li>
+            <li><strong>Secure evidence access:</strong> The application releases a stored file URL only after the backend gateway verifies role, ownership, organizational scope, site/system scope, and confidentiality clearance. Preview attempts are audited. Short-lived storage-signed URLs remain a recommended production hardening item.</li>
             <li><strong>Audit trail:</strong> Immutable logging of authentication, audit changes, evidence actions, status changes, imports, reports (see Audit Trail tab).</li>
             <li><strong>Confidentiality classification:</strong> Each evidence file tagged public/internal/confidential/restricted.</li>
             <li><strong>Input validation & output encoding:</strong> Server-side validation on all entity writes; framework handles output encoding.</li>
@@ -152,7 +152,7 @@ export default function Admin() {
             <li><strong>No secrets in source:</strong> Credentials managed via environment configuration, never committed.</li>
           </ul>
           <div className="pt-3 border-t border-slate-100">
-            <button onClick={processOverdue} className="flex items-center gap-2 text-xs border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50"><AlertTriangle className="w-3.5 h-3.5" /> Run overdue processor (mark past-due requests Overdue)</button>
+            <button onClick={processOverdue} className="flex items-center gap-2 text-xs border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50"><AlertTriangle className="w-3.5 h-3.5" /> Run scheduled compliance automation now</button>
           </div>
         </div>
       )}
@@ -170,12 +170,12 @@ export default function Admin() {
           <h4 className="font-medium text-slate-900 mt-3">How to Connect Power BI</h4>
           <ol className="list-decimal list-inside space-y-1 text-xs text-slate-600">
             <li>In Power BI Desktop → Get Data → Web/OData.</li>
-            <li>Use the Base44 API endpoint for this app with your API key as authorization header.</li>
-            <li>Import the entity tables listed above as a star schema: fact tables (EvidenceRequest, EvidenceSubmission, AuditControl, Finding, CorrectionPlan) + dimension tables (Framework, Domain, Control, Owner, OrgUnit, Site, System, Audit).</li>
+            <li>Call the authenticated <code>reporting-export</code> backend function using an authorized application user or service account.</li>
+            <li>Request one supported dataset per query and load it into a star schema: facts (EvidenceRequest, EvidenceSubmission, EvidenceMapping, AuditControl, Finding, CorrectionPlan) and dimensions (Framework, Domain, Control, Owner, OrgUnit, Site, System, Audit).</li>
             <li>Join on the relational keys (e.g. EvidenceRequest.audit_control_id → AuditControl.id).</li>
             <li>Build measures for compliance %, overdue counts, evidence status distribution.</li>
           </ol>
-          <p className="text-xs text-slate-400">Note: Power BI direct connector requires a Builder+ plan. The reporting data model and relational schema are fully available in-app regardless.</p>
+          <p className="text-xs text-slate-400">The export response exposes stable <code>id</code> keys and <code>updated_date</code> for incremental refresh. Production refresh credentials should be held in the Power BI gateway or approved secret store, not in report files.</p>
         </div>
       )}
     </div>
