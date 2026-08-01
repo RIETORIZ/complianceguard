@@ -65,7 +65,7 @@ export default function Owners() {
       </div>
 
       <div className="flex gap-1 border-b border-slate-200">
-        {[['hierarchy','Hierarchy',Building2],['employees','Employees',UserRound],['groups','Groups',Users]].map(([key,label,Icon]) => (
+        {[{ key: 'hierarchy', label: 'Hierarchy', Icon: Building2 }, { key: 'employees', label: 'Employees', Icon: UserRound }, { key: 'groups', label: 'Groups', Icon: Users }].map(({ key, label, Icon }) => (
           <button key={key} onClick={() => setTab(key)} className={cn("flex items-center gap-1.5 px-4 py-2.5 text-sm border-b-2", tab === key ? "border-slate-900 text-slate-900" : "border-transparent text-slate-500")}><Icon className="w-4 h-4" />{label}</button>
         ))}
       </div>
