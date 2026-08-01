@@ -74,7 +74,7 @@ Request:
 }
 ```
 
-`updatedSince` is optional. `limit` is capped at 10,000 rows per invocation.
+`updatedSince` is optional. `limit` is capped at 10,000 rows per invocation. Lookup datasets have no incremental key; `status_histories` uses `event_id` and `changed_at`.
 
 Supported dataset values:
 
@@ -97,6 +97,11 @@ Supported dataset values:
 - `correction_plans`
 - `notifications`
 - `audit_trail`
+- `compliance_snapshots`
+- `audit_types`
+- `evidence_statuses`
+- `compliance_statuses`
+- `status_histories`
 
 Response:
 
