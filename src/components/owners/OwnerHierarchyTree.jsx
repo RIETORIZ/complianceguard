@@ -1,12 +1,12 @@
-import React, { useState } from "react";
-import { ChevronDown, ChevronRight, Building2, Users, User, Briefcase } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Building2, Users, Briefcase, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
  * Hierarchical org tree: Sector → Department (manager) → Division (manager) → Employee (job role).
  * `expanded` is a Set of unit ids controlling open/closed branches.
  */
-export function OwnerHierarchyTree({ orgUnits, owners, search }) {
+export function OwnerHierarchyTree({ orgUnits, owners, search, onEdit }) {
   const [expanded, setExpanded] = useState(() => new Set());
   const toggle = (id) =>
     setExpanded((prev) => {
@@ -17,7 +17,11 @@ export function OwnerHierarchyTree({ orgUnits, owners, search }) {
 
   const ownerName = (id) => (id ? owners.find((o) => o.id === id)?.full_name : null);
   const q = search.trim().toLowerCase();
-  const match = (t) => (q ? (t || "").toLowerCase().includes(q) : false);
+
+  useEffect(() => {
+    if (!q) return;
+    setExpanded(new Set(orgUnits.map((u) => u.id)));
+  }, [q, orgUnits]);
 
   // does an owner match the search?
   const ownerMatches = (o) =>
@@ -126,6 +130,7 @@ export function OwnerHierarchyTree({ orgUnits, owners, search }) {
           <span className="text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-medium">Primary</span>
         )}
         {o.work_email && <span className="text-[11px] text-slate-400 ml-auto truncate">{o.work_email}</span>}
+        {onEdit && <button onClick={() => onEdit(o)} className="p-1 hover:bg-slate-100 rounded" title="Edit employee"><Pencil className="w-3.5 h-3.5 text-slate-400" /></button>}
       </div>
     );
   };
