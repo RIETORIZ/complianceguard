@@ -1,0 +1,4 @@
+Action ID,Corrective Action,Requested Evidence,Owner,Department,Due Date,Priority,Severity,Recommendation
+CAP-001,Complete privileged-access recertification,"Approved access review and closure screenshots",fatima.zahra@nca-demo.local,IT Infrastructure,2026-09-15,High,High,Validate every privileged account and obtain manager approval
+CAP-002,Replace inactive OT control owner,"Updated responsibility matrix and assignment confirmation",khalid.harbi@nca-demo.local,Operations Technology,2026-08-31,Critical,High,Remove inactive assignments from all open audits
+CAP-003,Renew expiring cybersecurity policy,"New approved policy version",ahmed.rashid@nca-demo.local,Cybersecurity Department,2026-12-01,Medium,Medium,Complete annual review before the active evidence expires
