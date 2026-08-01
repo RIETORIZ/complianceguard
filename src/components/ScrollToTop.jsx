@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useLocation, useNavigationType } from "react-router-dom";
+import { useLocation, useNavigationType } from "@/lib/router";
 
 const getHashId = (hash) => {
   const rawId = hash.slice(1);

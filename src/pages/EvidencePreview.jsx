@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate, useParams, Link } from "react-router-dom";
+import { useNavigate, useParams, Link } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
 import { ArrowLeft, Download, ExternalLink, FileText, Lock, ShieldCheck } from "lucide-react";
 

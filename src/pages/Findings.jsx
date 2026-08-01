@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification, SEVERITY_CONFIG } from "@/lib/compliance";
 import { useAuth } from "@/lib/AuthContext";

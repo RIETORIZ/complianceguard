@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification, computeOverdueStatus, EVIDENCE_STATUS_CONFIG, COMPLIANCE_STATUS_CONFIG, REVIEW_STATUS_CONFIG, isFileNameMeaningful, suggestEvidenceName, DEFAULT_EVIDENCE_CONDITIONS } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";

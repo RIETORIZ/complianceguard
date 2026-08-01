@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification } from "@/lib/compliance";
 import { Plus, Search, Calendar, MapPin, X } from "lucide-react";
