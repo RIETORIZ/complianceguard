@@ -1,3 +1,4 @@
+// @ts-nocheck — generated input-otp JavaScript wrapper; upstream package types are enforced by the imported package.
 import * as React from "react"
 import { OTPInput, OTPInputContext } from "input-otp"
 import { Minus } from "lucide-react"
