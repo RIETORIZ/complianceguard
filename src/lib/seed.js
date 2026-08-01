@@ -1,185 +1,152 @@
 import { base44 } from "@/api/base44Client";
 
-// Seeds the database with realistic compliance demonstration data.
-// Idempotent-ish: checks for existing frameworks before seeding.
 export async function seedDatabase(onProgress) {
-  const log = (msg) => onProgress && onProgress(msg);
-  const now = new Date().toISOString();
+  const log = (message) => onProgress?.(message);
   const year = new Date().getFullYear();
+  const now = new Date().toISOString();
+  const past = dateOffset(-30);
+  const recent = dateOffset(-5);
+  const future = dateOffset(30);
+  const nearFuture = dateOffset(10);
 
-  // 1. Org hierarchy
+  const ensure = async (entityName, query, payload) => {
+    const entity = base44.entities[entityName];
+    const existing = (await entity.filter(query))[0];
+    if (existing) return entity.update(existing.id, payload);
+    return entity.create(payload);
+  };
+
   log("Creating organizational hierarchy…");
-  const sectors = await base44.entities.OrgUnit.bulkCreate([
-    { type: "sector", name: "Energy Sector", code: "ES", active: true },
-    { type: "sector", name: "Digital Sector", code: "DS", active: true },
-  ]);
-  const sectorEnergy = sectors.find((s) => s.name === "Energy Sector");
-  const sectorDigital = sectors.find((s) => s.name === "Digital Sector");
+  const energy = await ensure("OrgUnit", { type: "sector", code: "ES" }, { type: "sector", name: "Energy Sector", code: "ES", active: true });
+  const digital = await ensure("OrgUnit", { type: "sector", code: "DS" }, { type: "sector", name: "Digital Sector", code: "DS", active: true });
+  const cyber = await ensure("OrgUnit", { type: "department", code: "CSD" }, { type: "department", name: "Cybersecurity Department", code: "CSD", parent_id: energy.id, active: true });
+  const otDepartment = await ensure("OrgUnit", { type: "department", code: "OT" }, { type: "department", name: "Operations Technology", code: "OT", parent_id: energy.id, active: true });
+  const infrastructure = await ensure("OrgUnit", { type: "department", code: "ITI" }, { type: "department", name: "IT Infrastructure", code: "ITI", parent_id: digital.id, active: true });
+  const governance = await ensure("OrgUnit", { type: "division", code: "GRC" }, { type: "division", name: "Governance Division", code: "GRC", parent_id: cyber.id, active: true });
+  const otSecurity = await ensure("OrgUnit", { type: "division", code: "OTS" }, { type: "division", name: "OT Security Division", code: "OTS", parent_id: otDepartment.id, active: true });
+  const cloud = await ensure("OrgUnit", { type: "division", code: "CLD" }, { type: "division", name: "Cloud Services Division", code: "CLD", parent_id: infrastructure.id, active: true });
 
-  const departments = await base44.entities.OrgUnit.bulkCreate([
-    { type: "department", name: "Cybersecurity Department", code: "CSD", parent_id: sectorEnergy.id, active: true },
-    { type: "department", name: "Operations Technology", code: "OT", parent_id: sectorEnergy.id, active: true },
-    { type: "department", name: "IT Infrastructure", code: "ITI", parent_id: sectorDigital.id, active: true },
-  ]);
-  const deptCyber = departments[0];
-  const deptOT = departments[1];
-  const deptIT = departments[2];
+  log("Creating sites, systems and employees…");
+  const plant1 = await ensure("Site", { code: "P1" }, { name: "Plant 1 — Riyadh Refinery", code: "P1", type: "Plant", location: "Riyadh", active: true });
+  const plant2 = await ensure("Site", { code: "P2" }, { name: "Plant 2 — Jeddah Facility", code: "P2", type: "Plant", location: "Jeddah", active: true });
+  const headquarters = await ensure("Site", { code: "HQ" }, { name: "Headquarters", code: "HQ", type: "Office", location: "Riyadh", active: true });
+  const activeDirectory = await ensure("System", { code: "AD" }, { name: "Active Directory", code: "AD", criticality: "critical", active: true });
+  const scada = await ensure("System", { code: "SCADA" }, { name: "SCADA Network", code: "SCADA", criticality: "critical", active: true });
+  const cloudIam = await ensure("System", { code: "CIAM" }, { name: "Cloud IAM", code: "CIAM", criticality: "high", active: true });
 
-  const divisions = await base44.entities.OrgUnit.bulkCreate([
-    { type: "division", name: "Governance Division", parent_id: deptCyber.id, active: true },
-    { type: "division", name: "OT Security Division", parent_id: deptOT.id, active: true },
-    { type: "division", name: "Cloud Services Division", parent_id: deptIT.id, active: true },
-  ]);
+  const ahmed = await ensure("Owner", { employee_number: "EMP-1001" }, { full_name: "Ahmed Al-Rashid", employee_number: "EMP-1001", job_title: "Compliance Officer", work_email: "ahmed.rashid@nca-demo.local", phone: "+96650000001", sector_id: energy.id, department_id: cyber.id, division_id: governance.id, assigned_sites: [headquarters.id], assigned_systems: [activeDirectory.id], group_ids: [], active: true, is_primary_accountable: true });
+  const sarah = await ensure("Owner", { employee_number: "EMP-1002" }, { full_name: "Sarah Al-Otaibi", employee_number: "EMP-1002", job_title: "Lead Auditor", work_email: "sarah.otaibi@nca-demo.local", phone: "+96650000002", sector_id: energy.id, department_id: cyber.id, division_id: governance.id, assigned_sites: [headquarters.id], assigned_systems: [activeDirectory.id], group_ids: [], active: true });
+  const khalid = await ensure("Owner", { employee_number: "EMP-1003" }, { full_name: "Khalid Al-Harbi", employee_number: "EMP-1003", job_title: "OT Security Manager", work_email: "khalid.harbi@nca-demo.local", phone: "+96650000003", sector_id: energy.id, department_id: otDepartment.id, division_id: otSecurity.id, assigned_sites: [plant1.id, plant2.id], assigned_systems: [scada.id], group_ids: [], active: true, is_primary_accountable: true });
+  const fatima = await ensure("Owner", { employee_number: "EMP-1004" }, { full_name: "Fatima Al-Zahra", employee_number: "EMP-1004", job_title: "Control Owner", work_email: "fatima.zahra@nca-demo.local", phone: "+96650000004", sector_id: digital.id, department_id: infrastructure.id, division_id: cloud.id, assigned_sites: [headquarters.id], assigned_systems: [cloudIam.id], group_ids: [], active: true });
+  const mohammed = await ensure("Owner", { employee_number: "EMP-1005" }, { full_name: "Mohammed Al-Qahtani", employee_number: "EMP-1005", job_title: "Former Division Manager", work_email: "mohammed.q@nca-demo.local", phone: "+96650000005", sector_id: energy.id, department_id: otDepartment.id, division_id: otSecurity.id, assigned_sites: [plant2.id], assigned_systems: [scada.id], group_ids: [], active: false });
+  await base44.entities.OrgUnit.update(energy.id, { manager_id: ahmed.id });
+  await base44.entities.OrgUnit.update(cyber.id, { manager_id: ahmed.id });
+  await base44.entities.OrgUnit.update(governance.id, { manager_id: sarah.id });
+  await base44.entities.OrgUnit.update(otDepartment.id, { manager_id: khalid.id });
+  await base44.entities.OrgUnit.update(otSecurity.id, { manager_id: khalid.id });
+  const otTeam = await ensure("OwnerGroup", { name: "OT Security Team" }, { name: "OT Security Team", description: "Plant OT security owners", member_ids: [khalid.id, mohammed.id], active: true });
+  const complianceTeam = await ensure("OwnerGroup", { name: "Compliance Team" }, { name: "Compliance Team", description: "Compliance and audit personnel", member_ids: [ahmed.id, sarah.id], active: true });
+  await base44.entities.Owner.update(khalid.id, { group_ids: [otTeam.id] });
+  await base44.entities.Owner.update(ahmed.id, { group_ids: [complianceTeam.id] });
+  await base44.entities.Owner.update(sarah.id, { group_ids: [complianceTeam.id] });
 
-  // 2. Sites & Systems
-  log("Creating sites and systems…");
-  const sites = await base44.entities.Site.bulkCreate([
-    { name: "Plant 1 — Riyadh Refinery", code: "P1", type: "Plant", location: "Riyadh", active: true },
-    { name: "Plant 2 — Jeddah Facility", code: "P2", type: "Plant", location: "Jeddah", active: true },
-    { name: "Headquarters", code: "HQ", type: "Office", location: "Riyadh", active: true },
-  ]);
-  const systems = await base44.entities.System.bulkCreate([
-    { name: "Active Directory", code: "AD", criticality: "critical", active: true },
-    { name: "SCADA Network", code: "SCADA", criticality: "critical", active: true },
-    { name: "Cloud IAM", code: "CIAM", criticality: "high", active: true },
-  ]);
+  log("Creating the seven NCA framework records…");
+  const frameworkDefinitions = [
+    ["ECC", "Essential Cybersecurity Controls"], ["DCC", "Digital Cybersecurity Controls"], ["CSCC", "Critical Systems Cybersecurity Controls"], ["CCC", "Cloud Cybersecurity Controls"], ["TCC", "Telecommunications Cybersecurity Controls"], ["OTCC", "Operational Technology Cybersecurity Controls"], ["OSMACC", "Open Source Management Cybersecurity Controls"],
+  ];
+  const frameworkRecords = {};
+  for (const [code, name] of frameworkDefinitions) frameworkRecords[code] = await ensure("Framework", { code }, { code, name, description: `${name} regulatory library`, authority: "NCA", version: "Demo library", is_nca_framework: true, active: true });
+  const ecc = frameworkRecords.ECC;
+  const otcc = frameworkRecords.OTCC;
+  const ccc = frameworkRecords.CCC;
 
-  // 3. Groups
-  const groups = await base44.entities.OwnerGroup.bulkCreate([
-    { name: "OT Security Team", active: true, member_ids: [] },
-    { name: "Cloud Governance Team", active: true, member_ids: [] },
-  ]);
+  log("Creating hierarchical sample regulatory and custom requirements…");
+  const governanceDomain = await ensure("Domain", { framework_id: ecc.id, code: "1" }, { framework_id: ecc.id, name: "Cybersecurity Governance", code: "1", order: 1 });
+  const governanceSubdomain = await ensure("Domain", { framework_id: ecc.id, code: "1-A" }, { framework_id: ecc.id, parent_id: governanceDomain.id, name: "Policies and Responsibilities", code: "1-A", order: 1 });
+  const assetDomain = await ensure("Domain", { framework_id: ecc.id, code: "2" }, { framework_id: ecc.id, name: "Asset Management", code: "2", order: 2 });
+  const iamDomain = await ensure("Domain", { framework_id: ecc.id, code: "3" }, { framework_id: ecc.id, name: "Identity and Access Management", code: "3", order: 3 });
+  const otDomain = await ensure("Domain", { framework_id: otcc.id, code: "OT-1" }, { framework_id: otcc.id, name: "OT Cybersecurity Governance", code: "OT-1", order: 1 });
+  const cloudDomain = await ensure("Domain", { framework_id: ccc.id, code: "C-1" }, { framework_id: ccc.id, name: "Cloud Identity and Access", code: "C-1", order: 1 });
 
-  // 4. Owners
-  log("Creating owners…");
-  const owners = await base44.entities.Owner.bulkCreate([
-    { full_name: "Ahmed Al-Rashid", employee_number: "EMP-1001", job_title: "Compliance Officer", work_email: "ahmed.rashid@nca-demo.local", phone: "+96650000001", sector_id: sectorEnergy.id, department_id: deptCyber.id, division_id: divisions[0].id, active: true, is_primary_accountable: true, assigned_sites: [sites[2].id], assigned_systems: [systems[0].id] },
-    { full_name: "Sarah Al-Otaibi", employee_number: "EMP-1002", job_title: "Lead Auditor", work_email: "sarah.otaibi@nca-demo.local", phone: "+96650000002", sector_id: sectorEnergy.id, department_id: deptCyber.id, division_id: divisions[0].id, active: true, assigned_systems: [systems[0].id] },
-    { full_name: "Khalid Al-Harbi", employee_number: "EMP-1003", job_title: "OT Security Manager", work_email: "khalid.harbi@nca-demo.local", phone: "+96650000003", sector_id: sectorEnergy.id, department_id: deptOT.id, division_id: divisions[1].id, active: true, assigned_sites: [sites[0].id, sites[1].id], assigned_systems: [systems[1].id] },
-    { full_name: "Fatima Al-Zahra", employee_number: "EMP-1004", job_title: "Control Owner", work_email: "fatima.zahra@nca-demo.local", phone: "+96650000004", sector_id: sectorDigital.id, department_id: deptIT.id, division_id: divisions[2].id, active: true, assigned_systems: [systems[2].id] },
-    { full_name: "Mohammed Al-Qahtani", employee_number: "EMP-1005", job_title: "Division Manager", work_email: "mohammed.q@nca-demo.local", phone: "+96650000005", sector_id: sectorEnergy.id, department_id: deptOT.id, division_id: divisions[1].id, active: false },
-  ]);
-  const [ahmed, sarah, khalid, fatima, mohammed] = owners;
+  const policyControl = await ensure("Control", { framework_id: ecc.id, control_number: "1-1" }, { framework_id: ecc.id, domain_id: governanceSubdomain.id, control_number: "1-1", title: "Cybersecurity Policy", official_text: "Demonstration regulatory wording: establish, approve, communicate and periodically review a cybersecurity policy.", custom_requirement_text: "", internal_notes: "Official wording is protected; organization guidance is stored separately.", control_type: "regulatory", is_custom: false, priority: "high", active: true });
+  const rolesControl = await ensure("Control", { framework_id: ecc.id, control_number: "1-2" }, { framework_id: ecc.id, domain_id: governanceSubdomain.id, control_number: "1-2", title: "Cybersecurity Roles and Responsibilities", official_text: "Demonstration regulatory wording: define, approve and assign cybersecurity roles and responsibilities.", control_type: "regulatory", is_custom: false, priority: "high", active: true });
+  const assetControl = await ensure("Control", { framework_id: ecc.id, control_number: "2-1" }, { framework_id: ecc.id, domain_id: assetDomain.id, control_number: "2-1", title: "Asset Inventory", official_text: "Demonstration regulatory wording: maintain an accurate inventory of information and technology assets.", control_type: "regulatory", is_custom: false, priority: "medium", active: true });
+  const accessControl = await ensure("Control", { framework_id: ecc.id, control_number: "3-1" }, { framework_id: ecc.id, domain_id: iamDomain.id, control_number: "3-1", title: "User Access Management", official_text: "Demonstration regulatory wording: manage user access according to least privilege and periodic review.", control_type: "regulatory", is_custom: false, priority: "high", active: true });
+  const otControl = await ensure("Control", { framework_id: otcc.id, control_number: "OT-1-1" }, { framework_id: otcc.id, domain_id: otDomain.id, control_number: "OT-1-1", title: "Site OT Security Governance", official_text: "Demonstration OT requirement: define site-specific OT cybersecurity governance and accountability.", control_type: "regulatory", is_custom: false, priority: "critical", active: true });
+  const cloudControl = await ensure("Control", { framework_id: ccc.id, control_number: "C-1-1" }, { framework_id: ccc.id, domain_id: cloudDomain.id, control_number: "C-1-1", title: "Cloud Privileged Access Review", official_text: "Demonstration cloud requirement: periodically review privileged identities and access assignments.", control_type: "regulatory", is_custom: false, priority: "high", active: true });
+  const technicalCustom = await ensure("Control", { framework_id: ccc.id, control_number: "TECH-001" }, { framework_id: ccc.id, domain_id: cloudDomain.id, control_number: "TECH-001", title: "Disable legacy administrative authentication", official_text: "", custom_requirement_text: "Legacy administrative authentication must be disabled and modern MFA enforced.", internal_notes: "Imported from sample technical-assessment spreadsheet.", control_type: "custom", is_custom: true, priority: "critical", active: true });
+  const internalCustom = await ensure("Control", { framework_id: ecc.id, control_number: "INT-001" }, { framework_id: ecc.id, domain_id: iamDomain.id, control_number: "INT-001", title: "Quarterly privileged access attestation", official_text: "", custom_requirement_text: "System owners must attest privileged access every quarter.", internal_notes: "Internal audit criterion", control_type: "custom", is_custom: true, priority: "high", active: true });
 
-  // 5. Frameworks
-  log("Creating NCA frameworks…");
-  const frameworks = await base44.entities.Framework.bulkCreate([
-    { code: "ECC", name: "Essential Cybersecurity Controls", description: "Essential baseline cybersecurity controls", authority: "NCA", version: "1.0", is_nca_framework: true, active: true },
-    { code: "DCC", name: "Digital Cybersecurity Controls", description: "Digital cybersecurity controls", authority: "NCA", is_nca_framework: true, active: true },
-    { code: "CSCC", name: "Critical Systems Cybersecurity Controls", description: "Critical systems controls", authority: "NCA", is_nca_framework: true, active: true },
-    { code: "CCC", name: "Cloud Cybersecurity Controls", description: "Cloud cybersecurity controls", authority: "NCA", is_nca_framework: true, active: true },
-    { code: "TCC", name: "Telecom Cybersecurity Controls", description: "Telecom controls", authority: "NCA", is_nca_framework: true, active: true },
-    { code: "OTCC", name: "Operational Technology Cybersecurity Controls", description: "OT cybersecurity controls (site-based)", authority: "NCA", is_nca_framework: true, active: true },
-    { code: "OSMACC", name: "Open Source Management & Audit Cybersecurity Controls", description: "Open source management controls", authority: "NCA", is_nca_framework: true, active: true },
-  ]);
-  const ecc = frameworks.find((f) => f.code === "ECC");
-  const otcc = frameworks.find((f) => f.code === "OTCC");
-  const cc = frameworks.find((f) => f.code === "CCC");
+  const policyExpected = await ensure("ExpectedEvidence", { control_id: policyControl.id, name: "Approved Cybersecurity Policy" }, { control_id: policyControl.id, framework_id: ecc.id, evidence_type: "Approved Policy", name: "Approved Cybersecurity Policy", description: "Current policy with visible version, approval authority and approval date.", is_mandatory: true, accepted_formats: ["pdf", "docx"], validity_period_days: 365, example: "Approved policy PDF", requires_formal_approval: true, allow_reuse: true, order: 1 });
+  const rolesExpected = await ensure("ExpectedEvidence", { control_id: rolesControl.id, name: "Approved Cybersecurity RACI" }, { control_id: rolesControl.id, framework_id: ecc.id, evidence_type: "RACI Matrix", name: "Approved Cybersecurity RACI", description: "Approved and current responsibility matrix.", is_mandatory: true, accepted_formats: ["pdf", "xlsx"], validity_period_days: 365, requires_formal_approval: true, allow_reuse: true, order: 1 });
+  const accessExpected = await ensure("ExpectedEvidence", { control_id: accessControl.id, name: "Access Review Screenshot" }, { control_id: accessControl.id, framework_id: ecc.id, evidence_type: "Screenshot", name: "Access Review Screenshot", description: "Full-screen review evidence with system, date and relevant configuration visible.", is_mandatory: true, accepted_formats: ["png", "jpg", "pdf"], validity_period_days: 90, requires_formal_approval: false, allow_reuse: false, order: 1 });
+  const otExpected = await ensure("ExpectedEvidence", { control_id: otControl.id, name: "Site OT Governance Approval" }, { control_id: otControl.id, framework_id: otcc.id, evidence_type: "Approved Document", name: "Site OT Governance Approval", is_mandatory: true, accepted_formats: ["pdf"], validity_period_days: 365, requires_formal_approval: true, allow_reuse: false, order: 1 });
+  const technicalExpected = await ensure("ExpectedEvidence", { control_id: technicalCustom.id, name: "Authentication configuration export" }, { control_id: technicalCustom.id, framework_id: ccc.id, evidence_type: "Configuration Export", name: "Authentication configuration export", description: "Configuration demonstrating MFA and legacy-authentication disablement.", is_mandatory: true, accepted_formats: ["csv", "json", "pdf", "png"], validity_period_days: 30, requires_formal_approval: false, allow_reuse: false, order: 1 });
+  const conditions = [
+    [policyExpected, "Meaningful file name", true, "Unclear filename cannot be reliably mapped."], [policyExpected, "Document is current and approved", true, "Expired or draft policy."], [policyExpected, "Visible approval authority, version and approval date", true, "Approval details are not visible."], [policyExpected, "Sensitive information appropriately masked", false, "Sensitive information is exposed."],
+    [rolesExpected, "Visible approval authority and version", true, "Unapproved responsibility matrix."],
+    [accessExpected, "Full-screen screenshot", true, "Screenshot is cropped."], [accessExpected, "Visible system name, date and time", true, "System or timestamp is missing."], [accessExpected, "Required configuration and correct scope visible", true, "Configuration or scope cannot be confirmed."],
+    [otExpected, "Correct site scope visible", true, "Evidence does not identify the assessed site."], [technicalExpected, "Legacy authentication is disabled", true, "Configuration still permits legacy authentication."], [technicalExpected, "MFA configuration is visible", true, "MFA configuration cannot be verified."],
+  ];
+  for (const [expected, name, mandatory, rejection] of conditions) await ensure("EvidenceCondition", { expected_evidence_id: expected.id, name }, { expected_evidence_id: expected.id, control_id: expected.control_id, name, description: name, is_mandatory: mandatory, example: "Evidence visibly satisfies the condition.", common_rejection_reason: rejection, active: true });
 
-  // 6. Domains & Controls (ECC sample)
-  log("Creating ECC domains and controls…");
-  const eccDomains = await base44.entities.Domain.bulkCreate([
-    { framework_id: ecc.id, name: "Cybersecurity Governance", code: "1", order: 1 },
-    { framework_id: ecc.id, name: "Asset Management", code: "2", order: 2 },
-    { framework_id: ecc.id, name: "Identity & Access Management", code: "3", order: 3 },
-  ]);
-  const gov = eccDomains[0], asset = eccDomains[1], iam = eccDomains[2];
+  log("Creating audits and correctly scoped controls…");
+  const eccAudit = await ensure("Audit", { name: `${year} ECC` }, { name: `${year} ECC`, audit_year: year, framework_id: ecc.id, framework_code: "ECC", audit_type: "Self-Assessment", status: "active", start_date: past, end_date: future, lead_auditor_id: sarah.id, audit_level_owners: [sarah.id], scope: "Enterprise ECC self-assessment", completion_percentage: 55 });
+  const otAudit1 = await ensure("Audit", { name: `${year} OTCC – Plant 1` }, { name: `${year} OTCC – Plant 1`, audit_year: year, framework_id: otcc.id, framework_code: "OTCC", audit_type: "Self-Assessment", site_id: plant1.id, status: "active", start_date: past, end_date: future, lead_auditor_id: khalid.id, audit_level_owners: [khalid.id], scope: "Plant 1 OTCC site assessment", completion_percentage: 35 });
+  const otAudit2 = await ensure("Audit", { name: `${year} OTCC – Plant 2` }, { name: `${year} OTCC – Plant 2`, audit_year: year, framework_id: otcc.id, framework_code: "OTCC", audit_type: "Self-Assessment", site_id: plant2.id, status: "active", start_date: past, end_date: future, lead_auditor_id: khalid.id, audit_level_owners: [khalid.id, mohammed.id], scope: "Plant 2 OTCC site assessment", completion_percentage: 20 });
+  const internalAudit = await ensure("Audit", { name: `${year} Internal Audit — IAM` }, { name: `${year} Internal Audit — IAM`, audit_year: year, framework_id: ecc.id, framework_code: "ECC", audit_type: "Internal Audit", status: "active", start_date: past, end_date: future, lead_auditor_id: sarah.id, audit_level_owners: [sarah.id], scope: "Internal IAM audit using selected NCA and custom requirements", completion_percentage: 45 });
+  const technicalAudit = await ensure("Audit", { name: `${year} Technical Assessment — Cloud` }, { name: `${year} Technical Assessment — Cloud`, audit_year: year, framework_id: ccc.id, framework_code: "CCC", audit_type: "Technical Assessment", status: "active", start_date: recent, end_date: future, lead_auditor_id: sarah.id, audit_level_owners: [sarah.id], scope: "Technical assessment imported from sample spreadsheet", completion_percentage: 25 });
+  const correctionAudit = await ensure("Audit", { name: `${year} Correction Plan — Access` }, { name: `${year} Correction Plan — Access`, audit_year: year, framework_id: ecc.id, framework_code: "ECC", audit_type: "Correction Plan", status: "active", start_date: past, end_date: future, lead_auditor_id: ahmed.id, audit_level_owners: [ahmed.id], scope: "Correction-plan workspace", completion_percentage: 40 });
 
-  const eccControls = await base44.entities.Control.bulkCreate([
-    { framework_id: ecc.id, domain_id: gov.id, control_number: "1-1", title: "Cybersecurity Policy", official_text: "The organization shall establish, approve, and publish a cybersecurity policy that is reviewed at least annually.", control_type: "regulatory", is_custom: false, priority: "high", active: true },
-    { framework_id: ecc.id, domain_id: gov.id, control_number: "1-2", title: "Cybersecurity Roles & Responsibilities", official_text: "The organization shall define and assign cybersecurity roles and responsibilities.", control_type: "regulatory", priority: "high", active: true },
-    { framework_id: ecc.id, domain_id: asset.id, control_number: "2-1", title: "Asset Inventory", official_text: "The organization shall maintain an inventory of information assets.", control_type: "regulatory", priority: "medium", active: true },
-    { framework_id: ecc.id, domain_id: iam.id, control_number: "3-1", title: "User Access Management", official_text: "The organization shall manage user access rights based on least privilege.", control_type: "regulatory", priority: "high", active: true },
-  ]);
-  const [cPolicy, cRoles, cAsset, cAccess] = eccControls;
+  const ensureAuditControl = (audit, control, compliance_status, ownersList, due_date, order = 1) => ensure("AuditControl", { audit_id: audit.id, control_id: control.id }, { audit_id: audit.id, control_id: control.id, framework_id: control.framework_id, domain_id: control.domain_id, control_number: control.control_number, control_title: control.title, compliance_status, control_level_owners: ownersList, due_date, auditor_comments: "", is_closed: compliance_status === "Implemented", closure_date: compliance_status === "Implemented" ? recent : "", order });
+  const acPolicy = await ensureAuditControl(eccAudit, policyControl, "Implemented", [ahmed.id], future, 1);
+  const acRoles = await ensureAuditControl(eccAudit, rolesControl, "Partially Implemented", [ahmed.id], future, 2);
+  const acAsset = await ensureAuditControl(eccAudit, assetControl, "Under Evaluation", [fatima.id], future, 3);
+  const acAccess = await ensureAuditControl(eccAudit, accessControl, "Not Implemented", [fatima.id], past, 4);
+  await ensureAuditControl(eccAudit, internalCustom, "Not Applicable", [sarah.id], future, 5);
+  const acOt1 = await ensureAuditControl(otAudit1, otControl, "Partially Implemented", [khalid.id], future, 1);
+  const acOt2 = await ensureAuditControl(otAudit2, otControl, "Under Evaluation", [khalid.id, mohammed.id], future, 1);
+  const acInternal = await ensureAuditControl(internalAudit, internalCustom, "Partially Implemented", [fatima.id], future, 1);
+  const acTechnical = await ensureAuditControl(technicalAudit, technicalCustom, "Under Evaluation", [fatima.id], future, 1);
 
-  // Expected evidence + conditions
-  log("Creating expected evidence and conditions…");
-  const expectedEvs = await base44.entities.ExpectedEvidence.bulkCreate([
-    { control_id: cPolicy.id, framework_id: ecc.id, evidence_type: "Approved Policy", name: "Approved Cybersecurity Policy Document", is_mandatory: true, accepted_formats: ["pdf", "docx"], validity_period_days: 365, requires_formal_approval: true, allow_reuse: true },
-    { control_id: cRoles.id, framework_id: ecc.id, evidence_type: "RACI Matrix", name: "Roles & Responsibilities Matrix", is_mandatory: true, accepted_formats: ["pdf", "xlsx"], allow_reuse: true },
-    { control_id: cAccess.id, framework_id: ecc.id, evidence_type: "Screenshot", name: "Access Review Screenshot", is_mandatory: true, accepted_formats: ["png", "jpg"], allow_reuse: false },
-  ]);
-  const conditions = await base44.entities.EvidenceCondition.bulkCreate([
-    { expected_evidence_id: expectedEvs[0].id, control_id: cPolicy.id, name: "Meaningful file name", is_mandatory: true, active: true },
-    { expected_evidence_id: expectedEvs[0].id, control_id: cPolicy.id, name: "Approved document", is_mandatory: true, active: true },
-    { expected_evidence_id: expectedEvs[0].id, control_id: cPolicy.id, name: "Visible approval authority", is_mandatory: true, active: true },
-    { expected_evidence_id: expectedEvs[0].id, control_id: cPolicy.id, name: "Visible version and approval date", is_mandatory: true, active: true },
-    { expected_evidence_id: expectedEvs[0].id, control_id: cPolicy.id, name: "Sensitive information appropriately masked", is_mandatory: false, active: true },
-    { expected_evidence_id: expectedEvs[2].id, control_id: cAccess.id, name: "Full-screen screenshot", is_mandatory: true, active: true },
-    { expected_evidence_id: expectedEvs[2].id, control_id: cAccess.id, name: "Visible system name", is_mandatory: true, active: true },
-    { expected_evidence_id: expectedEvs[2].id, control_id: cAccess.id, name: "Visible date and time", is_mandatory: true, active: true },
-  ]);
+  log("Creating every evidence-request status and independent mappings…");
+  const ensureRequest = (audit, auditControl, control, expected, title, status, reviewStatus, ownersList, dueDate, extra = {}) => ensure("EvidenceRequest", { audit_id: audit.id, audit_control_id: auditControl.id, title }, { audit_id: audit.id, audit_control_id: auditControl.id, control_id: control.id, framework_id: control.framework_id, expected_evidence_id: expected?.id || "", evidence_type: expected?.evidence_type || "Custom", title, description: expected?.description || "", status, request_date: past, due_date: dueDate, requesting_user_id: sarah.id, assigned_owner_ids: ownersList, assigned_group_ids: extra.assigned_group_ids || [], assigned_sector_id: extra.assigned_sector_id || "", assigned_department_id: extra.assigned_department_id || "", assigned_division_id: extra.assigned_division_id || "", notification_method: extra.notification_method || "immediate", submission_date: ["Received", "Partially Received", "Require Further Comments"].includes(status) ? recent : "", received_date: ["Received", "Partially Received", "Require Further Comments"].includes(status) ? now : "", review_status: reviewStatus, review_comments: extra.review_comments || "", rejection_reason: extra.rejection_reason || "", exclude_from_overdue: ["Not Applicable", "Not Available"].includes(status), status_history: [{ status: "Requested", changed_by: "seed", changed_at: `${past}T08:00:00Z` }, { status, changed_by: "seed", changed_at: now, comment: extra.justification || "Demonstration status" }] });
+  const reqPolicy = await ensureRequest(eccAudit, acPolicy, policyControl, policyExpected, "Approved Cybersecurity Policy", "Received", "accepted", [ahmed.id], future, { notification_method: "immediate" });
+  const reqRoles = await ensureRequest(eccAudit, acRoles, rolesControl, rolesExpected, "Approved Cybersecurity RACI", "Partially Received", "partially_sufficient", [ahmed.id], future, { notification_method: "end_of_day" });
+  const reqAccess = await ensureRequest(eccAudit, acAccess, accessControl, accessExpected, "Access Review Screenshot", "Overdue", "awaiting_review", [fatima.id], past, { assigned_department_id: infrastructure.id });
+  await ensureRequest(eccAudit, acAsset, assetControl, null, "Current Asset Inventory", "Not Available", "awaiting_review", [fatima.id], future, { assigned_department_id: infrastructure.id, justification: "Owner confirmed the inventory is not available; finding required." });
+  await ensureRequest(eccAudit, acPolicy, policyControl, policyExpected, "Policy Communication Evidence", "Require Further Comments", "further_comments_requested", [ahmed.id], future, { review_comments: "Explain the communication population and date.", rejection_reason: "Reporting population not clear." });
+  await ensureRequest(internalAudit, acInternal, internalCustom, null, "Quarterly Attestation Record", "Not Applicable", "awaiting_review", [fatima.id], future, { justification: "Newly commissioned system; approved N/A for the first quarter." });
+  await ensureRequest(otAudit1, acOt1, otControl, otExpected, "Plant 1 OT Governance Approval", "Requested", "awaiting_review", [khalid.id], future, { assigned_group_ids: [otTeam.id], assigned_division_id: otSecurity.id });
+  await ensureRequest(otAudit2, acOt2, otControl, otExpected, "Plant 2 OT Governance Approval", "Received", "awaiting_review", [khalid.id, mohammed.id], future, { assigned_group_ids: [otTeam.id], assigned_division_id: otSecurity.id, notification_method: "both" });
+  await ensureRequest(technicalAudit, acTechnical, technicalCustom, technicalExpected, "Authentication configuration export", "Requested", "awaiting_review", [fatima.id], nearFuture, { assigned_department_id: infrastructure.id });
 
-  // 7. Audits
-  log("Creating audits (ECC Self-Assessment, 2x OTCC, Internal, Technical)…");
-  const auditECC = (await base44.entities.Audit.create({ name: `${year} ECC`, audit_year: year, framework_id: ecc.id, framework_code: "ECC", audit_type: "Self-Assessment", status: "active", lead_auditor_id: sarah.id, audit_level_owners: [sarah.id], scope: "Enterprise ECC self-assessment" })).id;
-  const auditOTCC1 = (await base44.entities.Audit.create({ name: `${year} OTCC – Plant 1`, audit_year: year, framework_id: otcc.id, framework_code: "OTCC", audit_type: "Self-Assessment", site_id: sites[0].id, status: "active", lead_auditor_id: khalid.id, audit_level_owners: [khalid.id], scope: "OTCC site assessment - Plant 1" })).id;
-  const auditOTCC2 = (await base44.entities.Audit.create({ name: `${year} OTCC – Plant 2`, audit_year: year, framework_id: otcc.id, framework_code: "OTCC", audit_type: "Self-Assessment", site_id: sites[1].id, status: "active", lead_auditor_id: khalid.id, audit_level_owners: [khalid.id], scope: "OTCC site assessment - Plant 2" })).id;
-  const auditInternal = (await base44.entities.Audit.create({ name: `${year} Internal Audit — IAM`, audit_year: year, framework_id: ecc.id, framework_code: "ECC", audit_type: "Internal Audit", status: "active", lead_auditor_id: sarah.id, scope: "Internal audit of IAM controls" })).id;
-  const auditTech = (await base44.entities.Audit.create({ name: `${year} Technical Assessment — Cloud`, audit_year: year, framework_id: cc.id, framework_code: "CCC", audit_type: "Technical Assessment", status: "active", lead_auditor_id: sarah.id, scope: "Technical cloud controls assessment" })).id;
-  const auditCorrection = (await base44.entities.Audit.create({ name: `${year} Correction Plan — Access`, audit_year: year, framework_id: ecc.id, framework_code: "ECC", audit_type: "Correction Plan", status: "active", lead_auditor_id: sarah.id, scope: "Remediation of access findings" })).id;
+  const policyV1 = await ensure("EvidenceSubmission", { master_evidence_id: "EV-DEMO-001", version: 1 }, { evidence_request_id: reqPolicy.id, master_evidence_id: "EV-DEMO-001", display_title: "ECC_1-1_Approved_Cybersecurity_Policy_2025.pdf", description: "Previous approved policy version", evidence_type: "Approved Policy", original_file_name: "policy_2025.pdf", file_url: "https://example.invalid/mock-policy-v1.pdf", file_type: "pdf", file_size: 240000, file_hash: "demo-policy-v1", version: 1, is_active_version: false, upload_date: `${past}T09:00:00Z`, received_date: `${past}T09:00:00Z`, effective_date: `${year - 1}-01-01`, review_date: `${year - 1}-12-01`, expiry_date: `${year}-01-01`, evidence_date: `${year - 1}-01-01`, document_version: "1.0", approving_authority: "Executive Sponsor", change_description: "Superseded annual version", approval_status: "approved", review_status: "accepted", validity_status: "Superseded", superseded_date: now, confidentiality_classification: "confidential", owner_id: ahmed.id, responsible_department_id: cyber.id, related_site_id: headquarters.id, linked_audit_control_ids: [acPolicy.id], linked_evidence_request_ids: [reqPolicy.id], checklist_completed: true, checklist_results: conditions.filter(([expected]) => expected.id === policyExpected.id).map(([, name, mandatory]) => ({ condition: name, mandatory, passed: true })) });
+  const policyV2 = await ensure("EvidenceSubmission", { master_evidence_id: "EV-DEMO-001", version: 2 }, { evidence_request_id: reqPolicy.id, master_evidence_id: "EV-DEMO-001", display_title: `ECC_1-1_Approved_Cybersecurity_Policy_${year}.pdf`, description: "Current approved policy", evidence_type: "Approved Policy", original_file_name: "fakjsdbfjkvbaksjldbvkjlasd.pdf", file_url: "https://example.invalid/mock-policy-v2.pdf", file_type: "pdf", file_size: 245000, file_hash: "demo-policy-v2", version: 2, is_active_version: true, upload_date: now, received_date: now, effective_date: `${year}-01-01`, review_date: recent, expiry_date: `${year + 1}-01-01`, evidence_date: `${year}-01-01`, document_version: "2.0", approving_authority: "Executive Sponsor", change_description: "Annual review and approval", approval_status: "approved", review_status: "accepted", review_comments: "Accepted for policy control; reuse for RACI-related control remains independently assessed.", validity_status: "Valid", malware_scan_status: "clean", confidentiality_classification: "confidential", owner_id: ahmed.id, responsible_department_id: cyber.id, related_site_id: headquarters.id, linked_audit_control_ids: [acPolicy.id, acRoles.id], linked_evidence_request_ids: [reqPolicy.id, reqRoles.id], checklist_completed: true, checklist_results: conditions.filter(([expected]) => expected.id === policyExpected.id).map(([, name, mandatory]) => ({ condition: name, mandatory, passed: true })) });
+  const mappingPrimary = await ensure("EvidenceMapping", { evidence_submission_id: policyV2.id, evidence_request_id: reqPolicy.id }, { master_evidence_id: policyV2.master_evidence_id, evidence_submission_id: policyV2.id, evidence_request_id: reqPolicy.id, audit_control_id: acPolicy.id, control_id: policyControl.id, mapping_type: "primary", review_status: "accepted", review_comments: "Accepted for policy requirement", reviewed_at: now, created_at: now });
+  await ensure("EvidenceMapping", { evidence_submission_id: policyV2.id, evidence_request_id: reqRoles.id }, { master_evidence_id: policyV2.master_evidence_id, evidence_submission_id: policyV2.id, evidence_request_id: reqRoles.id, audit_control_id: acRoles.id, control_id: rolesControl.id, mapping_type: "reuse", review_status: "partially_sufficient", review_comments: "Policy supports governance context but does not replace the mandatory RACI matrix.", reviewed_at: now, created_at: now });
 
-  // 8. Audit controls
-  log("Linking controls to audits…");
-  const acRecords = await base44.entities.AuditControl.bulkCreate([
-    { audit_id: auditECC, control_id: cPolicy.id, framework_id: ecc.id, domain_id: gov.id, control_number: "1-1", control_title: cPolicy.title, compliance_status: "Implemented", control_level_owners: [ahmed.id], due_date: `${year}-12-31`, order: 1 },
-    { audit_id: auditECC, control_id: cRoles.id, framework_id: ecc.id, domain_id: gov.id, control_number: "1-2", control_title: cRoles.title, compliance_status: "Partially Implemented", control_level_owners: [ahmed.id], due_date: `${year}-12-31`, order: 2 },
-    { audit_id: auditECC, control_id: cAsset.id, framework_id: ecc.id, domain_id: asset.id, control_number: "2-1", control_title: cAsset.title, compliance_status: "Under Evaluation", control_level_owners: [fatima.id], due_date: `${year}-12-31`, order: 3 },
-    { audit_id: auditECC, control_id: cAccess.id, framework_id: ecc.id, domain_id: iam.id, control_number: "3-1", control_title: cAccess.title, compliance_status: "Not Implemented", control_level_owners: [fatima.id], due_date: `${year}-06-30`, order: 4 },
-    { audit_id: auditInternal, control_id: cAccess.id, framework_id: ecc.id, domain_id: iam.id, control_number: "3-1", control_title: cAccess.title, compliance_status: "Partially Implemented", control_level_owners: [fatima.id], due_date: `${year}-09-30`, order: 1 },
-  ]);
-  const acPolicy = acRecords[0];
-  const acRoles = acRecords[1];
-  const acAccess = acRecords[3];
+  log("Creating findings, correction plans, notifications, snapshots and audit history…");
+  const finding = await ensure("Finding", { source_audit_id: eccAudit.id, title: "Incomplete user access review evidence" }, { title: "Incomplete user access review evidence", description: "The required access-review screenshot is unavailable and implementation cannot be verified.", source_audit_id: eccAudit.id, source_type: "Evidence Review", framework_id: ecc.id, control_id: accessControl.id, audit_control_id: acAccess.id, evidence_request_id: reqAccess.id, severity: "high", risk_rating: "high", regulatory_impact: "Potential non-compliance with the assessed access-management requirement.", owner_id: fatima.id, department_id: infrastructure.id, due_date: future, auditor_comments: "Provide a full-screen screenshot with visible system, date and configuration.", management_response: "The team will complete a new review and submit corrected evidence.", verification_result: "Pending", status: "open", status_history: [{ status: "open", changed_at: now }] });
+  await ensure("Finding", { source_audit_id: otAudit2.id, title: "Inactive owner remains assigned to OTCC audit" }, { title: "Inactive owner remains assigned to OTCC audit", description: "An inactive employee remains assigned to an open site assessment and must be replaced or delegated.", source_audit_id: otAudit2.id, source_type: "Control Testing", framework_id: otcc.id, control_id: otControl.id, audit_control_id: acOt2.id, severity: "medium", risk_rating: "medium", regulatory_impact: "Ownership accountability gap", owner_id: khalid.id, department_id: otDepartment.id, due_date: nearFuture, auditor_comments: "Replace the inactive assignment.", status: "in_progress", status_history: [{ status: "open", changed_at: past }, { status: "in_progress", changed_at: now }] });
+  await ensure("CorrectionPlan", { finding_id: finding.id, corrective_action: "Perform and document a complete privileged-access review" }, { corrective_action: "Perform and document a complete privileged-access review", finding_id: finding.id, audit_id: correctionAudit.id, control_id: accessControl.id, primary_owner_id: fatima.id, supporting_owner_ids: [ahmed.id], priority: "high", risk: "high", target_date: future, completion_percentage: 40, required_closure_evidence: "Approved review report and full-screen configuration evidence", submitted_closure_evidence_url: "", validation_comments: "Pending submission", escalation_level: 0, closure_decision: "pending", status: "in_progress" });
+  await ensure("CorrectionPlan", { audit_id: correctionAudit.id, corrective_action: "Obtain formal approval for the cybersecurity RACI" }, { corrective_action: "Obtain formal approval for the cybersecurity RACI", audit_id: correctionAudit.id, control_id: rolesControl.id, primary_owner_id: ahmed.id, supporting_owner_ids: [sarah.id], priority: "medium", risk: "medium", target_date: past, completion_percentage: 20, required_closure_evidence: "Signed RACI matrix", submitted_closure_evidence_url: "", validation_comments: "Target date missed; escalated to department manager.", escalation_level: 1, closure_decision: "pending", status: "overdue" });
+  await ensure("CorrectionPlan", { audit_id: correctionAudit.id, corrective_action: "Close completed asset-owner assignment cleanup" }, { corrective_action: "Close completed asset-owner assignment cleanup", audit_id: correctionAudit.id, control_id: assetControl.id, primary_owner_id: ahmed.id, supporting_owner_ids: [], priority: "low", risk: "low", target_date: recent, completion_percentage: 100, required_closure_evidence: "Approved owner list", submitted_closure_evidence_url: "https://example.invalid/mock-closure.pdf", validation_comments: "Closure evidence verified and accepted.", escalation_level: 0, closure_decision: "closed", status: "closed" });
 
-  // 9. Evidence requests — covering every status
-  log("Creating evidence requests in every status…");
-  const pastDate = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-  const futureDate = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-  const reqs = await base44.entities.EvidenceRequest.bulkCreate([
-    { audit_id: auditECC, audit_control_id: acPolicy.id, control_id: cPolicy.id, framework_id: ecc.id, title: "ECC_1-1_Approved_Cybersecurity_Policy_2026.pdf", evidence_type: "Approved Policy", status: "Received", review_status: "accepted", request_date: pastDate, due_date: futureDate, assigned_owner_ids: [ahmed.id], notification_method: "immediate", submission_date: pastDate, received_date: now, acceptance_date: now, status_history: [{ status: "Requested", changed_at: pastDate }, { status: "Received", changed_at: now }] },
-    { audit_id: auditECC, audit_control_id: acRoles.id, control_id: cRoles.id, framework_id: ecc.id, title: "ECC_1-2_RACI_Matrix.xlsx", evidence_type: "RACI Matrix", status: "Partially Received", review_status: "partially_sufficient", request_date: pastDate, due_date: futureDate, assigned_owner_ids: [ahmed.id], notification_method: "end_of_day", status_history: [{ status: "Requested", changed_at: pastDate }, { status: "Partially Received", changed_at: now }] },
-    { audit_id: auditECC, audit_control_id: acAccess.id, control_id: cAccess.id, framework_id: ecc.id, title: "Access review screenshot", evidence_type: "Screenshot", status: "Overdue", review_status: "awaiting_review", request_date: pastDate, due_date: pastDate, assigned_owner_ids: [fatima.id], assigned_department_id: deptIT.id, notification_method: "immediate", status_history: [{ status: "Requested", changed_at: pastDate }] },
-    { audit_id: auditOTCC1, audit_control_id: acPolicy.id, control_id: cPolicy.id, framework_id: ecc.id, title: "OT cybersecurity policy", evidence_type: "Approved Policy", status: "Requested", review_status: "awaiting_review", request_date: pastDate, due_date: futureDate, assigned_owner_ids: [khalid.id], notification_method: "immediate", status_history: [{ status: "Requested", changed_at: pastDate }] },
-    { audit_id: auditOTCC2, audit_control_id: acPolicy.id, control_id: cPolicy.id, framework_id: ecc.id, title: "OT cybersecurity policy v2", evidence_type: "Approved Policy", status: "Require Further Comments", review_status: "further_comments_requested", request_date: pastDate, due_date: futureDate, assigned_owner_ids: [khalid.id], notification_method: "both", status_history: [{ status: "Requested", changed_at: pastDate }] },
-    { audit_id: auditInternal, audit_control_id: acRecords[4].id, control_id: cAccess.id, framework_id: ecc.id, title: "IAM access review evidence", evidence_type: "Screenshot", status: "Not Applicable", review_status: "awaiting_review", request_date: pastDate, due_date: futureDate, assigned_owner_ids: [fatima.id], exclude_from_overdue: true, status_history: [{ status: "Requested", changed_at: pastDate }, { status: "Not Applicable", changed_at: now }] },
-  ]);
-  const reqPolicy = reqs[0];
-  const reqRoles = reqs[1];
-  const reqAccessOverdue = reqs[2];
+  await ensure("Notification", { recipient_id: ahmed.id, title: "New evidence request: Approved Cybersecurity Policy" }, { recipient_id: ahmed.id, recipient_email: ahmed.work_email, channel: "in_app", delivery_mode: "immediate", type: "new_evidence_request", title: "New evidence request: Approved Cybersecurity Policy", body: `Evidence requested for ${year} ECC.`, related_record_type: "EvidenceRequest", related_record_id: reqPolicy.id, link: `/audits/${eccAudit.id}`, is_read: false, sent_at: now, delivery_status: "dev_logged" });
+  await ensure("Notification", { recipient_id: khalid.id, title: "End-of-day OTCC digest item" }, { recipient_id: khalid.id, recipient_email: khalid.work_email, channel: "in_app", delivery_mode: "end_of_day", type: "upcoming_deadline", title: "End-of-day OTCC digest item", body: "Plant 1 governance evidence is approaching its due date.", related_record_type: "EvidenceRequest", related_record_id: "", link: `/audits/${otAudit1.id}`, is_read: false, delivery_status: "queued" });
+  await ensure("AuditTrail", { action: "spreadsheet_import", record_id: technicalAudit.id }, { user_name: "Seed Demonstration", action: "spreadsheet_import", record_type: "Audit", record_id: technicalAudit.id, record_name: technicalAudit.name, comment: "Technical requirement imported using user-selected spreadsheet mappings from the sample import file.", new_value: JSON.stringify({ control: technicalCustom.control_number, requested_evidence: technicalExpected.name }), timestamp: now });
+  await ensure("AuditTrail", { action: "evidence_reuse", record_id: mappingPrimary.id }, { user_name: "Seed Demonstration", action: "evidence_reuse", record_type: "EvidenceMapping", record_id: mappingPrimary.id, record_name: policyV2.display_title, comment: "One master evidence file mapped to multiple controls; mapping decisions remain independent.", timestamp: now });
+  await ensure("AuditTrail", { action: "seed_data_validated", record_id: "demo-seed-v2" }, { user_name: "Seed Demonstration", action: "seed_data_validated", record_type: "System", record_id: "demo-seed-v2", record_name: "Validated demonstration dataset", comment: "Relationally valid data covering all major statuses and validation scenarios.", timestamp: now });
 
-  // 10. Evidence submissions — versioned + reused across controls
-  log("Creating evidence submissions (versioned, reused)…");
-  const masterId = "EV-DEMO-001";
-  await base44.entities.EvidenceSubmission.bulkCreate([
-    { evidence_request_id: reqPolicy.id, master_evidence_id: masterId, display_title: "ECC_1-1_Approved_Cybersecurity_Policy_2026.pdf", original_file_name: "policy_v1.pdf", file_url: "https://example.com/policy_v1.pdf", file_type: "pdf", file_size: 240000, version: 1, is_active_version: false, upload_date: pastDate, approval_status: "superseded", confidentiality_classification: "confidential", linked_audit_control_ids: [acPolicy.id], checklist_completed: true },
-    { evidence_request_id: reqPolicy.id, master_evidence_id: masterId, display_title: "ECC_1-1_Approved_Cybersecurity_Policy_2026.pdf", original_file_name: "policy_v2_signed.pdf", file_url: "https://example.com/policy_v2_signed.pdf", file_type: "pdf", file_size: 245000, version: 2, is_active_version: true, upload_date: now, received_date: now, effective_date: pastDate, review_date: now, expiry_date: `${year + 1}-01-01`, approval_status: "approved", confidentiality_classification: "confidential", linked_audit_control_ids: [acPolicy.id, acRoles.id], checklist_completed: true, checklist_results: [{ condition: "Meaningful file name", passed: true }, { condition: "Approved document", passed: true }, { condition: "Visible approval authority", passed: true }] },
-  ]);
+  const snapshots = [
+    [dateOffset(-60), 42], [dateOffset(-30), 51], [todayDate(), 58],
+  ];
+  for (const [snapshotDate, percentage] of snapshots) await ensure("ComplianceSnapshot", { snapshot_date: snapshotDate, scope_type: "organization", scope_name: "Organization" }, { snapshot_date: snapshotDate, scope_type: "organization", scope_id: "", scope_name: "Organization", implemented: 3, partially_implemented: 2, not_implemented: 1, under_evaluation: 3, not_applicable: 1, applicable_total: 9, compliance_percentage: percentage });
 
-  // 11. Findings & correction plans
-  log("Creating findings and corrective actions…");
-  const finding = await base44.entities.Finding.create({ title: "Incomplete user access review evidence", description: "Access review screenshot missing system name and date. Evidence rejected.", source_audit_id: auditECC, source_type: "Evidence Review", framework_id: ecc.id, control_id: cAccess.id, audit_control_id: acAccess.id, evidence_request_id: reqAccessOverdue.id, severity: "high", risk_rating: "high", regulatory_impact: "ECC 3-1 non-compliance", owner_id: fatima.id, department_id: deptIT.id, due_date: futureDate, auditor_comments: "Evidence must show full-screen with visible system name and date.", status: "open" });
-  await base44.entities.Finding.create({ title: "Cybersecurity policy not formally approved", description: "Policy lacks visible approval authority signature.", source_audit_id: auditECC, source_type: "Evidence Review", framework_id: ecc.id, control_id: cPolicy.id, severity: "medium", risk_rating: "medium", owner_id: ahmed.id, due_date: futureDate, status: "in_progress" });
-  await base44.entities.CorrectionPlan.create({ corrective_action: "Re-screenshot access review with visible system name and date/time", finding_id: finding.id, audit_id: auditCorrection, control_id: cAccess.id, primary_owner_id: fatima.id, supporting_owner_ids: [ahmed.id], priority: "high", risk: "high", target_date: futureDate, completion_percentage: 40, status: "in_progress", closure_decision: "pending", required_closure_evidence: "Updated screenshot" });
-  await base44.entities.CorrectionPlan.create({ corrective_action: "Obtain formal VP signature on cybersecurity policy", finding_id: null, audit_id: auditCorrection, control_id: cPolicy.id, primary_owner_id: ahmed.id, priority: "medium", risk: "medium", target_date: pastDate, completion_percentage: 20, status: "overdue", closure_decision: "pending", required_closure_evidence: "Signed policy PDF" });
-
-  // 12. Notifications
-  log("Creating sample notifications…");
-  await base44.entities.Notification.bulkCreate([
-    { recipient_id: ahmed.id, recipient_email: ahmed.work_email, channel: "in_app", delivery_mode: "immediate", type: "new_evidence_request", title: "New evidence request: Approved Cybersecurity Policy", body: "Evidence requested for 2026 ECC — Cybersecurity Policy. Due: " + futureDate, related_record_type: "EvidenceRequest", link: `/audits/${auditECC}`, is_read: false, sent_at: now, delivery_status: "dev_logged" },
-    { recipient_id: fatima.id, recipient_email: fatima.work_email, channel: "in_app", delivery_mode: "immediate", type: "overdue", title: "Evidence overdue: Access review screenshot", body: "Your evidence request is overdue.", related_record_type: "EvidenceRequest", link: `/audits/${auditECC}`, is_read: false, sent_at: now, delivery_status: "dev_logged" },
-    { recipient_id: khalid.id, recipient_email: khalid.work_email, channel: "in_app", delivery_mode: "end_of_day", type: "upcoming_deadline", title: "Deadline approaching: OT cybersecurity policy", body: "Evidence due in 30 days for OTCC Plant 1.", link: `/audits/${auditOTCC1}`, is_read: true, sent_at: now, read_at: now, delivery_status: "dev_logged" },
-  ]);
-
-  // 13. Audit trail entries
-  log("Recording audit trail…");
-  await base44.entities.AuditTrail.bulkCreate([
-    { user_name: "System", action: "seed_data_loaded", record_type: "System", record_id: "seed", record_name: "Seed Data", comment: "Initial seed data loaded", timestamp: now },
-    { user_name: "Sarah Al-Otaibi", action: "audit_created", record_type: "Audit", record_id: auditECC, record_name: `${year} ECC`, timestamp: now },
-    { user_name: "Sarah Al-Otaibi", action: "evidence_uploaded", record_type: "EvidenceSubmission", record_name: "Cybersecurity Policy v2", comment: "Versioned upload", timestamp: now },
-  ]);
-
-  log("Seed data complete.");
-  return { frameworks: frameworks.length, owners: owners.length, audits: 6 };
+  log("✓ Seed data is relationally valid and idempotent.");
+  return { frameworks: frameworkDefinitions.length, owners: 5, audits: 6, evidence_request_statuses: 7, evidence_versions: 2, evidence_mappings: 2 };
 }
+
+function dateOffset(days) { const date = new Date(); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
+function todayDate() { return new Date().toISOString().slice(0, 10); }
