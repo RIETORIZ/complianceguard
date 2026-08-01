@@ -1,0 +1,16 @@
+{
+  "name": "compliance-automation",
+  "entry": "index.ts",
+  "automations": [
+    {
+      "name": "Hourly compliance status processing",
+      "description": "Marks overdue evidence requests, expired evidence and overdue corrective actions and creates escalation notifications.",
+      "type": "scheduled",
+      "schedule_mode": "recurring",
+      "schedule_type": "simple",
+      "repeat_unit": "hours",
+      "repeat_interval": 1,
+      "is_active": true
+    }
+  ]
+}
