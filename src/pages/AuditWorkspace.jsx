@@ -4,6 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { logAudit, recordStatusTransition, dispatchNotification, computeOverdueStatus, EVIDENCE_STATUS_CONFIG, COMPLIANCE_STATUS_CONFIG, REVIEW_STATUS_CONFIG, isFileNameMeaningful, suggestEvidenceName, DEFAULT_EVIDENCE_CONDITIONS } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
 import { ImportSpreadsheetModal } from "@/components/ImportSpreadsheetModal";
+import AssignmentSelector from "@/components/audits/AssignmentSelector";
 import { ChevronRight, Plus, Upload, X, FileText, Link2, CheckCircle2, AlertTriangle, MessageSquare, FileX, RefreshCw, ShieldCheck, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/AuthContext";
@@ -350,8 +351,6 @@ function ControlDetail({ audit, auditControl, requests, owners, ownerName, submi
 function RequestForm({ audit, auditControl, owners, expectedEvidence, conditions, orgUnits, groups, onClose, onDone }) {
   const [form, setForm] = useState({ expected_evidence_id: '', title: '', evidence_type: '', description: '', due_date: '', owner_ids: [], group_ids: [], sector_id: '', department_id: '', division_id: '', notification_method: 'immediate', condition_text: '' });
   const [saving, setSaving] = useState(false);
-  const departments = orgUnits.filter((unit) => unit.type === 'department' && (!form.sector_id || unit.parent_id === form.sector_id));
-  const divisions = orgUnits.filter((unit) => unit.type === 'division' && (!form.department_id || unit.parent_id === form.department_id));
   const selectExpected = (expectedId) => {
     const expected = expectedEvidence.find((item) => item.id === expectedId);
     const expectedConditions = conditions.filter((condition) => condition.expected_evidence_id === expectedId && condition.active !== false);
@@ -359,8 +358,7 @@ function RequestForm({ audit, auditControl, owners, expectedEvidence, conditions
   };
   const resolveRecipients = () => {
     const ids = new Set(form.owner_ids);
-    const selectedGroups = groups.filter((group) => form.group_ids.includes(group.id));
-    selectedGroups.forEach((group) => (group.member_ids || []).forEach((ownerId) => ids.add(ownerId)));
+    groups.filter((group) => form.group_ids.includes(group.id)).forEach((group) => (group.member_ids || []).forEach((ownerId) => ids.add(ownerId)));
     owners.forEach((owner) => {
       if (form.division_id && owner.division_id === form.division_id) ids.add(owner.id);
       else if (form.department_id && owner.department_id === form.department_id) ids.add(owner.id);
@@ -368,6 +366,16 @@ function RequestForm({ audit, auditControl, owners, expectedEvidence, conditions
     });
     return Array.from(ids).filter((ownerId) => owners.find((owner) => owner.id === ownerId)?.active !== false);
   };
+  const selectedPersonnel = resolveRecipients().map((ownerId) => {
+    const owner = owners.find((record) => record.id === ownerId);
+    const sources = [];
+    if (form.owner_ids.includes(ownerId)) sources.push('Person');
+    groups.filter((group) => form.group_ids.includes(group.id) && (group.member_ids || []).includes(ownerId)).forEach((group) => sources.push(`Group: ${group.name}`));
+    const selectedUnit = form.division_id || form.department_id || form.sector_id;
+    const selectedField = form.division_id ? 'division_id' : form.department_id ? 'department_id' : 'sector_id';
+    if (selectedUnit && owner?.[selectedField] === selectedUnit) sources.push(`${orgUnits.find((unit) => unit.id === selectedUnit)?.type || 'Unit'}: ${orgUnits.find((unit) => unit.id === selectedUnit)?.name || 'Selected unit'}`);
+    return { ...owner, sources };
+  }).filter((owner) => owner.id);
   const submit = async () => {
     if (!form.title || !form.due_date) return alert('Evidence title and due date are required.');
     setSaving(true);
@@ -404,8 +412,7 @@ function RequestForm({ audit, auditControl, owners, expectedEvidence, conditions
       <textarea value={form.description} onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))} placeholder="Why the evidence is required / evidence instructions" className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 h-16" />
       <textarea disabled={!!form.expected_evidence_id} value={form.condition_text} onChange={(event) => setForm((previous) => ({ ...previous, condition_text: event.target.value }))} placeholder="Acceptance conditions, one per line" className="w-full text-sm border border-slate-200 rounded-lg px-2.5 py-2 h-20 disabled:bg-slate-50" />
       <label className="block text-xs font-medium text-slate-600">Due date<input type="date" value={form.due_date} onChange={(event) => setForm((previous) => ({ ...previous, due_date: event.target.value }))} className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-2.5 py-2" /></label>
-      <div className="grid md:grid-cols-2 gap-2"><label className="text-xs font-medium text-slate-600">People<select multiple value={form.owner_ids} onChange={(event) => setForm((previous) => ({ ...previous, owner_ids: Array.from(event.target.selectedOptions).map((option) => option.value) }))} className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-2 py-1 h-24">{owners.filter((owner) => owner.active).map((owner) => <option key={owner.id} value={owner.id}>{owner.full_name} — {owner.work_email}</option>)}</select></label><label className="text-xs font-medium text-slate-600">Predefined groups<select multiple value={form.group_ids} onChange={(event) => setForm((previous) => ({ ...previous, group_ids: Array.from(event.target.selectedOptions).map((option) => option.value) }))} className="w-full mt-1 text-sm border border-slate-200 rounded-lg px-2 py-1 h-24">{groups.filter((group) => group.active !== false).map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label></div>
-      <div className="grid md:grid-cols-3 gap-2"><label className="text-xs font-medium text-slate-600">Sector<select value={form.sector_id} onChange={(event) => setForm((previous) => ({ ...previous, sector_id: event.target.value, department_id: '', division_id: '' }))} className="w-full mt-1 text-sm border rounded-lg px-2 py-2"><option value="">None</option>{orgUnits.filter((unit) => unit.type === 'sector' && unit.active !== false).map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className="text-xs font-medium text-slate-600">Department<select value={form.department_id} onChange={(event) => setForm((previous) => ({ ...previous, department_id: event.target.value, division_id: '' }))} className="w-full mt-1 text-sm border rounded-lg px-2 py-2"><option value="">None</option>{departments.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label><label className="text-xs font-medium text-slate-600">Division<select value={form.division_id} onChange={(event) => setForm((previous) => ({ ...previous, division_id: event.target.value }))} className="w-full mt-1 text-sm border rounded-lg px-2 py-2"><option value="">None</option>{divisions.map((unit) => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label></div>
+      <AssignmentSelector form={form} setForm={setForm} owners={owners} groups={groups} orgUnits={orgUnits} personnel={selectedPersonnel} />
       <label className="flex items-center gap-2 text-xs text-slate-600">Notification method<select value={form.notification_method} onChange={(event) => setForm((previous) => ({ ...previous, notification_method: event.target.value }))} className="text-xs border rounded-lg px-2 py-1"><option value="immediate">Immediate</option><option value="end_of_day">End of day</option><option value="both">Both</option><option value="none">In application only</option></select></label>
       <div className="flex gap-2"><button onClick={submit} disabled={saving || !form.title || !form.due_date} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg disabled:opacity-50">{saving ? 'Creating…' : 'Create request'}</button><button onClick={onClose} className="text-xs text-slate-500 px-3 py-1.5">Cancel</button></div>
     </div>
