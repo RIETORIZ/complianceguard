@@ -1,215 +1,162 @@
-import React, { useState, useRef } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { base44 } from "@/api/base44Client";
-import { logAudit } from "@/lib/compliance";
-import { X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle, ArrowRight } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { logAudit, dispatchNotification } from "@/lib/compliance";
+import { X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle } from "lucide-react";
 
-// Extracts rows from an uploaded CSV/Excel file via the ExtractData integration
+const FIELD_DEFS = [
+  { key: "control_number", label: "Control / Requirement Number" },
+  { key: "control", label: "Control / Requirement Description", required: true },
+  { key: "evidence", label: "Requested Evidence", required: true },
+  { key: "evidence_conditions", label: "Evidence Conditions" },
+  { key: "owner", label: "Owner" },
+  { key: "department", label: "Department" },
+  { key: "due_date", label: "Due Date" },
+  { key: "priority", label: "Priority" },
+  { key: "severity", label: "Severity / Risk" },
+  { key: "recommendation", label: "Recommendation" },
+  { key: "corrective_action", label: "Corrective Action" },
+];
+
 export function ImportSpreadsheetModal({ auditId, audit, owners, onClose, onDone }) {
   const [file, setFile] = useState(null);
   const [rows, setRows] = useState([]);
   const [columns, setColumns] = useState([]);
   const [step, setStep] = useState(1);
-  const [mapping, setMapping] = useState({ control: "", evidence: "", owner: "", department: "", due_date: "", priority: "", severity: "", recommendation: "", corrective_action: "" });
+  const [mapping, setMapping] = useState(Object.fromEntries(FIELD_DEFS.map((f) => [f.key, ""])));
   const [errors, setErrors] = useState([]);
+  const [warnings, setWarnings] = useState([]);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState(null);
-  const fileRef = useRef();
+  const fileRef = useRef(null);
 
-  const FIELDS = [
-    { key: "control", label: "Control / Requirement", required: true },
-    { key: "evidence", label: "Expected Evidence", required: false },
-    { key: "owner", label: "Owner (name)", required: false },
-    { key: "department", label: "Department", required: false },
-    { key: "due_date", label: "Due Date", required: false },
-    { key: "priority", label: "Priority", required: false },
-    { key: "severity", label: "Severity", required: false },
-    { key: "recommendation", label: "Recommendation", required: false },
-    { key: "corrective_action", label: "Corrective Action", required: false },
-  ];
+  const previewRows = useMemo(() => rows.slice(0, 10), [rows]);
 
-  const handleFile = async (f) => {
-    setFile(f);
+  const autoMap = (headers) => {
+    const next = Object.fromEntries(FIELD_DEFS.map((f) => [f.key, ""]));
+    const tests = {
+      control_number: ["control number", "requirement number", "control id", "reference"],
+      control: ["control description", "requirement description", "requirement", "control"],
+      evidence: ["requested evidence", "expected evidence", "evidence"],
+      evidence_conditions: ["acceptance criteria", "evidence conditions", "conditions"],
+      owner: ["owner", "assignee", "responsible"],
+      department: ["department", "dept"],
+      due_date: ["due date", "target date", "deadline"],
+      priority: ["priority"], severity: ["severity", "risk"],
+      recommendation: ["recommendation"], corrective_action: ["corrective action", "remediation", "action"],
+    };
+    for (const [key, candidates] of Object.entries(tests)) {
+      next[key] = headers.find((h) => candidates.some((c) => String(h).trim().toLowerCase() === c)) ||
+        headers.find((h) => candidates.some((c) => String(h).toLowerCase().includes(c))) || "";
+    }
+    return next;
+  };
+
+  const handleFile = async (selected) => {
+    if (!selected) return;
+    setFile(selected); setErrors([]); setWarnings([]);
     try {
-      const { file_url } = await base44.integrations.Core.UploadFile({ file: f });
-      const extracted = await base44.integrations.Core.ExtractDataFromUploadedFile({
-        file_url,
-        json_schema: { type: "array", items: { type: "object", properties: { col1: { type: "string" }, col2: { type: "string" }, col3: { type: "string" }, col4: { type: "string" }, col5: { type: "string" }, col6: { type: "string" }, col7: { type: "string" }, col8: { type: "string" } } } },
-      });
-      const data = extracted.output || [];
-      if (data.length === 0) { setErrors(["No rows found in file."]); return; }
-      const cols = Object.keys(data[0]);
-      setColumns(cols);
-      setRows(data);
-      // auto-match columns by name
-      const auto = { ...mapping };
-      cols.forEach((c) => {
-        const cl = c.toLowerCase();
-        if (!auto.control && (cl.includes("control") || cl.includes("requirement"))) auto.control = c;
-        else if (!auto.evidence && cl.includes("evidence")) auto.evidence = c;
-        else if (!auto.owner && (cl.includes("owner") || cl.includes("name"))) auto.owner = c;
-        else if (!auto.department && cl.includes("department")) auto.department = c;
-        else if (!auto.due_date && (cl.includes("due") || cl.includes("date"))) auto.due_date = c;
-        else if (!auto.priority && cl.includes("priority")) auto.priority = c;
-        else if (!auto.severity && cl.includes("severity")) auto.severity = c;
-        else if (!auto.recommendation && cl.includes("recommend")) auto.recommendation = c;
-        else if (!auto.corrective_action && (cl.includes("corrective") || cl.includes("action"))) auto.corrective_action = c;
-      });
-      setMapping(auto);
-      setStep(2);
-    } catch (e) {
-      setErrors(["Failed to parse file: " + e.message]);
+      const buffer = await selected.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const parsed = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+      if (!parsed.length) throw new Error("No data rows were found in the first worksheet.");
+      const headers = Object.keys(parsed[0]);
+      setColumns(headers); setRows(parsed); setMapping(autoMap(headers)); setStep(2);
+    } catch (error) {
+      setErrors([`Unable to parse the file: ${error.message}`]);
     }
   };
 
   const validate = () => {
-    const errs = [];
-    if (!mapping.control) errs.push("You must identify the control/requirement column.");
-    const seen = new Set();
-    rows.forEach((r, i) => {
-      const val = r[mapping.control];
-      if (!val || !String(val).trim()) errs.push(`Row ${i + 1}: blank control/requirement.`);
-      else if (seen.has(val)) errs.push(`Row ${i + 1}: duplicate control "${val}".`);
-      else seen.add(val);
+    const nextErrors = [];
+    const nextWarnings = [];
+    if (!mapping.control) nextErrors.push("Map the control/requirement description column.");
+    if (!mapping.evidence) nextErrors.push("Map the requested-evidence column.");
+    if (!mapping.control || !mapping.evidence) { setErrors(nextErrors); return false; }
+    const seen = new Map();
+    rows.forEach((row, index) => {
+      const line = index + 2;
+      const control = String(row[mapping.control] ?? "").trim();
+      const evidence = String(row[mapping.evidence] ?? "").trim();
+      const number = mapping.control_number ? String(row[mapping.control_number] ?? "").trim() : "";
+      const duplicateKey = `${number}|${control}`.toLowerCase();
+      if (!control) nextErrors.push(`Row ${line}: control/requirement is blank.`);
+      if (!evidence) nextErrors.push(`Row ${line}: requested evidence is blank.`);
+      if (control && seen.has(duplicateKey)) nextErrors.push(`Row ${line}: duplicate requirement (first seen on row ${seen.get(duplicateKey)}).`);
+      if (control) seen.set(duplicateKey, line);
+      if (mapping.priority && row[mapping.priority] && !["low", "medium", "high", "critical"].includes(String(row[mapping.priority]).toLowerCase())) nextWarnings.push(`Row ${line}: unknown priority will default to medium.`);
+      if (mapping.severity && row[mapping.severity] && !["low", "medium", "high", "critical"].includes(String(row[mapping.severity]).toLowerCase())) nextWarnings.push(`Row ${line}: unknown severity will default to medium.`);
     });
-    setErrors(errs);
-    return errs.length === 0;
+    setErrors(nextErrors); setWarnings(nextWarnings);
+    return nextErrors.length === 0;
   };
 
   const doImport = async () => {
     if (!validate()) return;
     setImporting(true);
     try {
+      const orgUnits = await base44.entities.OrgUnit.list("name", 500);
       let created = 0;
-      for (const r of rows) {
-        const controlTitle = String(r[mapping.control] || "").trim();
-        if (!controlTitle) continue;
+      for (const row of rows) {
+        const title = String(row[mapping.control] || "").trim();
+        const number = mapping.control_number ? String(row[mapping.control_number] || "").trim() : "";
+        const evidenceName = String(row[mapping.evidence] || "").trim();
+        const priorityRaw = mapping.priority ? String(row[mapping.priority] || "").toLowerCase() : "medium";
+        const severityRaw = mapping.severity ? String(row[mapping.severity] || "").toLowerCase() : "medium";
+        const priority = ["low", "medium", "high", "critical"].includes(priorityRaw) ? priorityRaw : "medium";
+        const severity = ["low", "medium", "high", "critical"].includes(severityRaw) ? severityRaw : "medium";
+        const ownerText = mapping.owner ? String(row[mapping.owner] || "").trim().toLowerCase() : "";
+        const owner = ownerText ? owners.find((o) => o.full_name?.toLowerCase() === ownerText || o.work_email?.toLowerCase() === ownerText || o.employee_number?.toLowerCase() === ownerText) : null;
+        const departmentText = mapping.department ? String(row[mapping.department] || "").trim().toLowerCase() : "";
+        const department = departmentText ? orgUnits.find((u) => u.type === "department" && (u.name?.toLowerCase() === departmentText || u.code?.toLowerCase() === departmentText)) : null;
+        const requirementText = mapping.recommendation ? String(row[mapping.recommendation] || "").trim() : title;
         const ctrl = await base44.entities.Control.create({
-          framework_id: audit.framework_id, title: controlTitle, control_number: "",
-          official_text: String(r[mapping.recommendation] || r[mapping.control] || ""), control_type: "custom", is_custom: true,
-          priority: r[mapping.priority] || "medium", active: true,
+          framework_id: audit.framework_id || "", control_number: number, title,
+          custom_requirement_text: requirementText, official_text: "", control_type: "custom", is_custom: true,
+          priority, active: true,
         });
-        const ownerName = mapping.owner ? String(r[mapping.owner] || "").trim() : "";
-        const matchedOwner = ownerName ? owners.find((o) => o.full_name.toLowerCase().includes(ownerName.toLowerCase())) : null;
-        const ac = await base44.entities.AuditControl.create({
-          audit_id: auditId, control_id: ctrl.id, framework_id: audit.framework_id, control_title: controlTitle,
-          compliance_status: "Under Evaluation", due_date: mapping.due_date ? r[mapping.due_date] : "",
-          control_level_owners: matchedOwner ? [matchedOwner.id] : [],
+        const auditControl = await base44.entities.AuditControl.create({
+          audit_id: auditId, control_id: ctrl.id, framework_id: audit.framework_id || "", control_number: number,
+          control_title: title, compliance_status: "Under Evaluation", due_date: mapping.due_date ? String(row[mapping.due_date] || "") : "",
+          control_level_owners: owner ? [owner.id] : [],
         });
-        if (mapping.evidence && r[mapping.evidence]) {
-          await base44.entities.ExpectedEvidence.create({ control_id: ctrl.id, framework_id: audit.framework_id, name: String(r[mapping.evidence]), is_mandatory: true });
-          await base44.entities.EvidenceRequest.create({
-            audit_id: auditId, audit_control_id: ac.id, control_id: ctrl.id, framework_id: audit.framework_id,
-            title: String(r[mapping.evidence]), evidence_type: "Imported", status: "Requested", review_status: "awaiting_review",
-            request_date: new Date().toISOString().slice(0, 10), due_date: mapping.due_date ? r[mapping.due_date] : "",
-            assigned_owner_ids: matchedOwner ? [matchedOwner.id] : [], assigned_department_id: mapping.department ? r[mapping.department] : "",
-            notification_method: "immediate",
-          });
-        }
-        if (mapping.corrective_action && r[mapping.corrective_action]) {
-          await base44.entities.CorrectionPlan.create({
-            corrective_action: String(r[mapping.corrective_action]), audit_id: auditId, control_id: ctrl.id,
-            primary_owner_id: matchedOwner?.id || "", priority: r[mapping.priority] || "medium", risk: r[mapping.severity] || "medium",
-            target_date: mapping.due_date ? r[mapping.due_date] : "", status: "open", closure_decision: "pending",
-          });
-        }
-        created++;
+        const expected = await base44.entities.ExpectedEvidence.create({
+          control_id: ctrl.id, framework_id: audit.framework_id || "", evidence_type: "Imported", name: evidenceName,
+          description: "Imported requested evidence", is_mandatory: true, allow_reuse: true,
+        });
+        const conditionsText = mapping.evidence_conditions ? String(row[mapping.evidence_conditions] || "") : "";
+        const conditionItems = conditionsText.split(/\r?\n|;|\|/).map((x) => x.trim()).filter(Boolean);
+        if (conditionItems.length) await base44.entities.EvidenceCondition.bulkCreate(conditionItems.map((name) => ({ expected_evidence_id: expected.id, control_id: ctrl.id, name, is_mandatory: true, active: true })));
+        const request = await base44.entities.EvidenceRequest.create({
+          audit_id: auditId, audit_control_id: auditControl.id, control_id: ctrl.id, framework_id: audit.framework_id || "", expected_evidence_id: expected.id,
+          title: evidenceName, evidence_type: "Imported", status: "Requested", review_status: "awaiting_review",
+          request_date: new Date().toISOString().slice(0, 10), due_date: mapping.due_date ? String(row[mapping.due_date] || "") : "",
+          assigned_owner_ids: owner ? [owner.id] : [], assigned_department_id: department?.id || "", notification_method: "immediate",
+          status_history: [{ status: "Requested", changed_by: "import", changed_at: new Date().toISOString(), comment: `Imported from ${file?.name}` }],
+        });
+        if (owner) await dispatchNotification({ recipientId: owner.id, recipientEmail: owner.work_email, type: "new_evidence_request", title: `Imported evidence request: ${evidenceName}`, body: `${audit.name} — ${title}`, relatedRecordType: "EvidenceRequest", relatedRecordId: request.id, link: `/audits/${auditId}` });
+        const correctiveAction = mapping.corrective_action ? String(row[mapping.corrective_action] || "").trim() : "";
+        if (correctiveAction) await base44.entities.CorrectionPlan.create({ corrective_action: correctiveAction, audit_id: auditId, control_id: ctrl.id, primary_owner_id: owner?.id || "", priority, risk: severity, target_date: mapping.due_date ? String(row[mapping.due_date] || "") : "", completion_percentage: 0, required_closure_evidence: evidenceName, status: "open", closure_decision: "pending" });
+        created += 1;
       }
-      await logAudit({ action: "spreadsheet_import", recordType: "Audit", recordId: auditId, recordName: audit.name, comment: `Imported ${created} rows from ${file?.name}`, newValue: { rows: created, mapping } });
-      setResult({ created });
-      setStep(4);
-      onDone && onDone();
-    } catch (e) { setErrors(["Import failed: " + e.message]); }
+      await logAudit({ action: "spreadsheet_import", recordType: "Audit", recordId: auditId, recordName: audit.name, comment: `Imported ${created} validated rows from ${file?.name}`, newValue: { rows: created, mapping } });
+      setResult({ created }); setStep(4); onDone?.();
+    } catch (error) { setErrors([`Import failed: ${error.message}`]); }
     finally { setImporting(false); }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <h2 className="font-semibold text-slate-900">Import from Spreadsheet — Step {step}/4</h2>
-          <button onClick={onClose}><X className="w-5 h-5 text-slate-400" /></button>
-        </div>
-        <div className="p-6 space-y-4">
-          {step === 1 && (
-            <div className="text-center py-8">
-              <div className="border-2 border-dashed border-slate-200 rounded-xl p-8">
-                <FileSpreadsheet className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-                <p className="text-sm text-slate-500 mb-3">Upload an Excel or CSV file. Column names are not fixed — you'll map them next.</p>
-                <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" onChange={(e) => handleFile(e.target.files[0])} className="hidden" />
-                <button onClick={() => fileRef.current?.click()} className="text-sm bg-slate-900 text-white px-4 py-2 rounded-lg flex items-center gap-2 mx-auto"><Upload className="w-4 h-4" /> Choose file</button>
-                <button onClick={() => {
-                  const csv = "Control,Expected Evidence,Owner,Department,Due Date,Priority,Severity,Recommendation,Corrective Action\nNetwork segmentation policy,Network diagram,Khalid Al-Harbi,Operations Technology,2026-12-31,high,medium,Document segmentation zones,Update diagram to include new VLANs\nBackup encryption,Encryption config screenshot,Fatima Al-Zahra,IT Infrastructure,2026-09-30,medium,low,Verify AES-256 enabled,\nPatch management procedure,Approved procedure PDF,Ahmed Al-Rashid,Cybersecurity Department,2026-11-15,high,high,Include emergency patch SLA,Revise procedure to add 24h emergency patching";
-                  const blob = new Blob([csv], { type: "text/csv" });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement("a"); a.href = url; a.download = "sample-compliance-import.csv"; a.click();
-                  URL.revokeObjectURL(url);
-                }} className="text-xs text-slate-500 hover:text-slate-900 mt-2 underline">Download sample spreadsheet</button>
-              </div>
-              {errors.length > 0 && <div className="mt-3 text-xs text-red-600">{errors[0]}</div>}
-            </div>
-          )}
-          {step === 2 && (
-            <>
-              <p className="text-sm text-slate-600">Found <strong>{rows.length}</strong> rows, <strong>{columns.length}</strong> columns. Map columns to fields:</p>
-              <div className="grid grid-cols-2 gap-3">
-                {FIELDS.map((f) => (
-                  <div key={f.key}>
-                    <label className="text-xs font-medium text-slate-600">{f.label}{f.required && <span className="text-red-500">*</span>}</label>
-                    <select value={mapping[f.key]} onChange={(e) => setMapping((p) => ({ ...p, [f.key]: e.target.value }))} className="w-full mt-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm">
-                      <option value="">— none —</option>
-                      {columns.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-              <div className="overflow-x-auto max-h-48 border border-slate-200 rounded-lg">
-                <table className="w-full text-xs">
-                  <thead className="bg-slate-50"><tr>{columns.map((c) => <th key={c} className="px-2 py-1 text-left font-medium text-slate-600">{c}</th>)}</tr></thead>
-                  <tbody>{rows.slice(0, 5).map((r, i) => (<tr key={i} className="border-t border-slate-100">{columns.map((c) => <td key={c} className="px-2 py-1 text-slate-700 truncate max-w-[120px]">{String(r[c] ?? "")}</td>)}</tr>))}</tbody>
-                </table>
-              </div>
-              <p className="text-[10px] text-slate-400">Showing first 5 of {rows.length} rows for preview.</p>
-              <div className="flex justify-between">
-                <button onClick={() => setStep(1)} className="text-sm text-slate-600 px-4 py-2">Back</button>
-                <button onClick={() => { if (validate()) setStep(3); }} className="text-sm bg-slate-900 text-white px-4 py-2 rounded-lg">Validate & Continue</button>
-              </div>
-            </>
-          )}
-          {step === 3 && (
-            <>
-              <div className="flex items-center gap-2 text-sm text-slate-700"><CheckCircle2 className="w-5 h-5 text-emerald-600" /> Validation complete</div>
-              {errors.length === 0 ? (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">All {rows.length} rows validated. No blank or duplicate controls detected. Ready to import.</div>
-              ) : (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                  <div className="flex items-center gap-2 text-sm text-amber-800 font-medium mb-1"><AlertTriangle className="w-4 h-4" /> Issues found ({errors.length}):</div>
-                  <ul className="text-xs text-amber-700 list-disc list-inside space-y-0.5 max-h-32 overflow-y-auto">{errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
-                </div>
-              )}
-              <div className="bg-slate-50 rounded-lg p-3 text-xs text-slate-600">
-                <div className="font-semibold mb-1">Will create per row:</div>
-                <ul className="list-disc list-inside space-y-0.5">
-                  <li>Custom control {mapping.evidence && "+ expected evidence + evidence request"}</li>
-                  {mapping.corrective_action && <li>Correction plan item (if corrective action column mapped)</li>}
-                </ul>
-              </div>
-              <div className="flex justify-between">
-                <button onClick={() => setStep(2)} className="text-sm text-slate-600 px-4 py-2">Back</button>
-                <button onClick={doImport} disabled={importing} className="text-sm bg-slate-900 text-white px-4 py-2 rounded-lg disabled:opacity-50">{importing ? "Importing…" : `Confirm & Import ${rows.length} rows`}</button>
-              </div>
-            </>
-          )}
-          {step === 4 && (
-            <div className="text-center py-8">
-              <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3" />
-              <div className="text-lg font-semibold text-slate-900">Import complete</div>
-              <p className="text-sm text-slate-500 mt-1">{result?.created} records created successfully.</p>
-              <button onClick={onClose} className="mt-4 text-sm bg-slate-900 text-white px-4 py-2 rounded-lg">Done</button>
-            </div>
-          )}
-        </div>
-      </div>
+  return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl max-w-4xl w-full max-h-[92vh] overflow-y-auto">
+    <div className="flex justify-between px-6 py-4 border-b"><h2 className="font-semibold">Spreadsheet Import — Step {step}/4</h2><button onClick={onClose}><X className="w-5 h-5" /></button></div>
+    <div className="p-6 space-y-4">
+      {step === 1 && <div className="border-2 border-dashed rounded-xl p-10 text-center"><FileSpreadsheet className="w-12 h-12 text-slate-300 mx-auto" /><p className="text-sm text-slate-500 my-3">Upload CSV, XLS, or XLSX. Original headers are preserved and mapped by you.</p><input ref={fileRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={(e) => handleFile(e.target.files?.[0])} /><button onClick={() => fileRef.current?.click()} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm inline-flex gap-2"><Upload className="w-4 h-4" />Choose file</button></div>}
+      {step === 2 && <><div className="grid md:grid-cols-2 gap-3">{FIELD_DEFS.map((field) => <label key={field.key} className="text-xs font-medium text-slate-600">{field.label}{field.required && <span className="text-red-500"> *</span>}<select value={mapping[field.key]} onChange={(e) => setMapping((p) => ({ ...p, [field.key]: e.target.value }))} className="w-full mt-1 border rounded-lg px-2 py-2 text-sm"><option value="">— not mapped —</option>{columns.map((column) => <option key={column} value={column}>{column}</option>)}</select></label>)}</div><Preview columns={columns} rows={previewRows} total={rows.length} /><div className="flex justify-between"><button onClick={() => setStep(1)} className="text-sm px-4 py-2">Back</button><button onClick={() => validate() && setStep(3)} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm">Validate</button></div></>}
+      {step === 3 && <><div className="flex gap-2 items-center text-sm"><CheckCircle2 className="w-5 h-5 text-emerald-600" />{rows.length} rows validated and ready for confirmation.</div>{warnings.length > 0 && <IssueBox title="Warnings" items={warnings} warning /> }<div className="bg-slate-50 p-4 rounded-lg text-sm">The import will create a custom control, expected-evidence item, evidence request, acceptance conditions, owner assignments, and optional corrective action for each row.</div><div className="flex justify-between"><button onClick={() => setStep(2)} className="text-sm px-4 py-2">Back</button><button onClick={doImport} disabled={importing} className="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm disabled:opacity-50">{importing ? "Importing…" : `Confirm & import ${rows.length} rows`}</button></div></>}
+      {step === 4 && <div className="text-center py-10"><CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto" /><h3 className="font-semibold mt-3">Import complete</h3><p className="text-sm text-slate-500">{result?.created} requirements created.</p><button onClick={onClose} className="mt-4 bg-slate-900 text-white px-4 py-2 rounded-lg text-sm">Done</button></div>}
+      {errors.length > 0 && <IssueBox title="Errors" items={errors} />}
     </div>
-  );
+  </div></div>;
 }
+
+function Preview({ columns, rows, total }) { return <div><div className="overflow-auto max-h-64 border rounded-lg"><table className="w-full text-xs"><thead className="bg-slate-50 sticky top-0"><tr>{columns.map((c) => <th key={c} className="text-left px-2 py-2">{c}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={i} className="border-t">{columns.map((c) => <td key={c} className="px-2 py-1.5 max-w-56 truncate">{String(r[c] ?? "")}</td>)}</tr>)}</tbody></table></div><p className="text-[11px] text-slate-400 mt-1">Showing {rows.length} of {total} rows.</p></div>; }
+function IssueBox({ title, items, warning = false }) { return <div className={`${warning ? "bg-amber-50 border-amber-200 text-amber-800" : "bg-red-50 border-red-200 text-red-700"} border rounded-lg p-3`}><div className="font-medium text-sm flex gap-2"><AlertTriangle className="w-4 h-4" />{title} ({items.length})</div><ul className="text-xs list-disc list-inside mt-1 max-h-40 overflow-auto">{items.map((item, i) => <li key={i}>{item}</li>)}</ul></div>; }
