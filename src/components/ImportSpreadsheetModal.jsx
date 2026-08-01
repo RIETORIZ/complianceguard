@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import readXlsxFile from "read-excel-file";
+import readXlsxFile from "read-excel-file/browser";
 import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification } from "@/lib/compliance";
 import { X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle } from "lucide-react";
