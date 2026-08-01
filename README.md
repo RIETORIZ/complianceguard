@@ -1,77 +1,92 @@
-# Base44 Project
+# Compliance Management Tool
 
-Use this repository to run and edit the app locally, then publish changes back through Base44.
+Evidence-driven compliance operations for regulatory frameworks, audits, evidence requests and submissions, findings, corrective actions, notifications, dashboards, reports and Power BI integration.
 
-Any change pushed to the repo will also be reflected in the Base44 Builder.
+## Technology
 
-## Prerequisites
-
-1. Clone the repository using the project's Git URL.
-2. Navigate to the project directory.
-3. Install dependencies: `npm install`.
-4. Install the Base44 CLI: `npm install -g base44@latest`.
-
-See the [Base44 CLI docs](https://docs.base44.com/developers/references/cli/get-started/overview) if you want to run Base44 commands directly.
+- React 18 + Vite + Tailwind CSS
+- Base44 authentication, persistent entities, files and backend functions
+- Version-controlled schemas under `base44/entities`
+- Scheduled automation under `base44/functions`
+- Vitest for deterministic compliance and authorization rules
 
 ## Run Locally
 
-Run the full local development environment from the project root:
-
 ```bash
-base44 dev
-```
-
-`base44 dev` starts the local Base44 development backend and, when this app is configured for it, also starts the frontend dev server for you. Use the frontend URL printed by the command.
-
-For example, when the Base44 project config includes a `serveCommand`, `base44 dev` can launch the frontend too:
-
-```json5
-{
-  "site": {
-    "serveCommand": "npm run dev"
-  }
-}
-```
-
-In a Base44 project this lives in `base44/config.jsonc`.
-
-## Run Only The Frontend
-
-If you only want to work on the frontend against the hosted Base44 backend, run:
-
-```bash
+npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-Open the local URL printed by Vite.
+For frontend-only development against the hosted backend, update `.env.local`:
 
-## Use The Hosted Backend
-
-For frontend-only development, create or update `.env.local` in the project root:
-
-```bash
-VITE_BASE44_APP_ID=your_app_id
-VITE_BASE44_APP_BASE_URL=https://your-app.base44.app
+```dotenv
+VITE_BASE44_APP_ID=6a6dcc68d9385572345614dd
+VITE_BASE44_APP_BASE_URL=https://your-published-app.base44.app
 ```
 
-`VITE_BASE44_APP_ID` identifies the Base44 app.
+Never place production secrets in `VITE_*` variables.
 
-`VITE_BASE44_APP_BASE_URL` tells the Base44 Vite plugin where to send local `/api` requests. Point it at your deployed Base44 app URL when you want the local frontend to use the hosted backend.
-
-When you use `base44 dev`, the command injects the local Base44 values for you, so `.env.local` is mainly needed for frontend-only workflows.
-
-## Publish Your Changes
-
-After pushing your changes to git, open the Base44 dashboard and publish the app:
+## Quality Gate
 
 ```bash
-base44 dashboard open
+npm run validate
+npm audit
 ```
 
-## Docs & Support
+`npm run validate` executes:
 
-Documentation: [https://docs.base44.com/Integrations/Using-GitHub](https://docs.base44.com/Integrations/Using-GitHub)
+1. production build
+2. ESLint error gate
+3. automated tests
 
-Base44 CLI command reference: [https://docs.base44.com/developers/references/cli/commands/introduction](https://docs.base44.com/developers/references/cli/commands/introduction)
+## Demonstration Data
 
-Support: [https://app.base44.com/support](https://app.base44.com/support)
+Sign in with an administrative role and select:
+
+**Administration → Seed Data → Run Seed**
+
+The seed is idempotent and covers:
+
+- all seven required NCA framework records
+- ECC Self-Assessment
+- two OTCC site assessments
+- Internal Audit
+- Technical Assessment imported scenario
+- Correction Plan
+- every evidence-request status
+- every compliance status
+- versioned and reused evidence
+- findings and corrective actions
+- immediate and end-of-day notifications
+- compliance trends
+
+Sample files:
+
+- `/samples/technical-assessment-import.csv`
+- `/samples/correction-plan-import.csv`
+
+## Backend Functions
+
+- `secure-evidence-access`
+- `reporting-export`
+- `compliance-automation`
+- `end-of-day-digest`
+- `compliance-snapshot`
+
+Verify function deployment and schedules after publishing the Base44 application.
+
+## Documentation
+
+- [Architecture](src/docs/ARCHITECTURE.md)
+- [Requirement Traceability Matrix](src/docs/REQUIREMENT_TRACEABILITY_MATRIX.md)
+- [Validation Report](src/docs/VALIDATION_REPORT.md)
+- [API Documentation](src/docs/API_DOCUMENTATION.md)
+- [Power BI Model](src/docs/POWER_BI_MODEL.md)
+- [Security](src/docs/SECURITY.md)
+- [Deployment](src/docs/DEPLOYMENT.md)
+- [Known Limitations](src/docs/KNOWN_LIMITATIONS.md)
+
+## Release Position
+
+The source is suitable for controlled demonstration and acceptance testing after the quality gate passes. Production release additionally requires malware scanning, short-lived evidence delivery, enterprise SSO, email integration, penetration testing, privacy/data-residency approval and runtime verification of scheduled functions.
