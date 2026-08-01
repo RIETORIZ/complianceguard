@@ -1,3 +1,4 @@
+// @ts-nocheck — generated shadcn/Radix JavaScript wrapper; upstream label types are enforced by the imported packages.
 import * as React from "react"
 import * as LabelPrimitive from "@radix-ui/react-label"
 import { cva } from "class-variance-authority";
