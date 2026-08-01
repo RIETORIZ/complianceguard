@@ -18,7 +18,77 @@
     },
     "file_url": {
       "type": "string",
-      "description": "Uploaded file storage location"
+      "description": "Uploaded file storage location",
+      "rls": {
+        "read": {
+          "$or": [
+            {
+              "user_condition": {
+                "role": "admin"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "System Administrator"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Compliance Administrator"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Compliance Officer"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Auditor"
+              }
+            }
+          ]
+        },
+        "write": {
+          "$or": [
+            {
+              "user_condition": {
+                "role": "admin"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "System Administrator"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Compliance Administrator"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Compliance Officer"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Auditor"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Auditee"
+              }
+            },
+            {
+              "user_condition": {
+                "role": "Control Owner"
+              }
+            }
+          ]
+        }
+      }
     },
     "file_type": {
       "type": "string"
