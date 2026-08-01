@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
+import readXlsxFile from "read-excel-file";
 import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification } from "@/lib/compliance";
 import { X, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle } from "lucide-react";
@@ -56,12 +56,17 @@ export function ImportSpreadsheetModal({ auditId, audit, owners, onClose, onDone
     if (!selected) return;
     setFile(selected); setErrors([]); setWarnings([]);
     try {
-      const buffer = await selected.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const parsed = XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
-      if (!parsed.length) throw new Error("No data rows were found in the first worksheet.");
-      const headers = Object.keys(parsed[0]);
+      let matrix;
+      if (selected.name.toLowerCase().endsWith(".csv")) {
+        const text = await selected.text();
+        matrix = parseCsv(text);
+      } else {
+        matrix = await readXlsxFile(selected);
+      }
+      if (!matrix?.length || matrix.length < 2) throw new Error("No data rows were found in the first worksheet.");
+      const headers = matrix[0].map((value, index) => String(value || `Column ${index + 1}`).trim());
+      const parsed = matrix.slice(1).filter((row) => row.some((value) => String(value ?? "").trim())).map((row) => Object.fromEntries(headers.map((header, index) => [header, normalizeCell(row[index])])));
+      if (!parsed.length) throw new Error("The worksheet contains headers but no data rows.");
       setColumns(headers); setRows(parsed); setMapping(autoMap(headers)); setStep(2);
     } catch (error) {
       setErrors([`Unable to parse the file: ${error.message}`]);
