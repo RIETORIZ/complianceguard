@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isFileNameMeaningful, suggestEvidenceName, computeOverdueStatus, computeComplianceMetrics } from "./compliance";
+import { isFileNameMeaningful, suggestEvidenceName, computeOverdueStatus, computeComplianceMetrics, evidenceValidityStatus } from "./compliance-core";
 
 describe("evidence naming", () => {
   it("rejects random keysmash names", () => expect(isFileNameMeaningful("fakjsdbfjkvbaksjldbvkjlasd.png")).toBe(false));
@@ -21,5 +21,9 @@ describe("status separation and calculations", () => {
       { compliance_status: "Not Applicable" },
     ]);
     expect(result.percentage).toBe(50);
+  });
+  it("calculates evidence validity", () => {
+    expect(evidenceValidityStatus("2020-01-01", new Date("2026-08-01T00:00:00Z"))).toBe("Expired");
+    expect(evidenceValidityStatus("2026-08-20", new Date("2026-08-01T00:00:00Z"))).toBe("Expiring Soon");
   });
 });
