@@ -23,6 +23,7 @@ import Login from '@/pages/Login';
 import Register from '@/pages/Register';
 import ForgotPassword from '@/pages/ForgotPassword';
 import ResetPassword from '@/pages/ResetPassword';
+import PermissionRoute from '@/components/PermissionRoute';
 // Add page imports here
 
 const AuthenticatedApp = () => {
@@ -57,16 +58,16 @@ const AuthenticatedApp = () => {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<ProtectedRoute unauthenticatedElement={<Navigate to="/login" replace />} />}>
         <Route element={<Layout />}>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/audits" element={<Audits />} />
-          <Route path="/audits/:id" element={<AuditWorkspace />} />
-          <Route path="/frameworks" element={<Frameworks />} />
-          <Route path="/owners" element={<Owners />} />
-          <Route path="/findings" element={<Findings />} />
-          <Route path="/correction-plans" element={<CorrectionPlans />} />
+          <Route path="/" element={<PermissionRoute permission="dashboard_view"><Dashboard /></PermissionRoute>} />
+          <Route path="/audits" element={<PermissionRoute permission="audits_view"><Audits /></PermissionRoute>} />
+          <Route path="/audits/:id" element={<PermissionRoute permission="audits_view"><AuditWorkspace /></PermissionRoute>} />
+          <Route path="/frameworks" element={<PermissionRoute permission="frameworks_view"><Frameworks /></PermissionRoute>} />
+          <Route path="/owners" element={<PermissionRoute permission="owners_view"><Owners /></PermissionRoute>} />
+          <Route path="/findings" element={<PermissionRoute permission="audits_view"><Findings /></PermissionRoute>} />
+          <Route path="/correction-plans" element={<PermissionRoute permission="audits_view"><CorrectionPlans /></PermissionRoute>} />
           <Route path="/notifications" element={<Notifications />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/admin" element={<Admin />} />
+          <Route path="/reports" element={<PermissionRoute permission="reports_view"><Reports /></PermissionRoute>} />
+          <Route path="/admin" element={<PermissionRoute permission="admin_view"><Admin /></PermissionRoute>} />
         </Route>
       </Route>
       <Route path="*" element={<PageNotFound />} />
