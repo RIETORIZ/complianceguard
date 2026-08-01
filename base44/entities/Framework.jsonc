@@ -1,0 +1,38 @@
+{
+  "name": "Framework",
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Short code e.g. ECC, OTCC"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "authority": {
+      "type": "string",
+      "description": "Issuing authority / NCA"
+    },
+    "version": {
+      "type": "string"
+    },
+    "applicable_scope": {
+      "type": "string"
+    },
+    "is_nca_framework": {
+      "type": "boolean",
+      "default": true
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "code",
+    "name"
+  ]
+}

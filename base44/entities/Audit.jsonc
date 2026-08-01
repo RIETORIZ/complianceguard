@@ -1,0 +1,77 @@
+{
+  "name": "Audit",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "e.g. 2026 ECC or 2026 OTCC - Plant 1"
+    },
+    "audit_year": {
+      "type": "number"
+    },
+    "framework_id": {
+      "type": "string"
+    },
+    "framework_code": {
+      "type": "string"
+    },
+    "audit_type": {
+      "type": "string",
+      "enum": [
+        "Self-Assessment",
+        "External Regulatory Audit",
+        "Corporate Compliance Assessment",
+        "Internal Audit",
+        "Technical Assessment",
+        "Correction Plan"
+      ],
+      "default": "Self-Assessment"
+    },
+    "site_id": {
+      "type": "string",
+      "description": "Site for OTCC site-specific audits"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "active",
+        "in_review",
+        "completed",
+        "cancelled"
+      ],
+      "default": "planned"
+    },
+    "start_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "end_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "lead_auditor_id": {
+      "type": "string"
+    },
+    "audit_level_owners": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "scope": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "completion_percentage": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "name",
+    "audit_type"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "Domain",
+  "type": "object",
+  "properties": {
+    "framework_id": {
+      "type": "string",
+      "description": "Reference to Framework"
+    },
+    "name": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "order": {
+      "type": "number",
+      "default": 0
+    },
+    "parent_id": {
+      "type": "string",
+      "description": "Optional parent domain for subdomain hierarchy"
+    }
+  },
+  "required": [
+    "framework_id",
+    "name"
+  ]
+}

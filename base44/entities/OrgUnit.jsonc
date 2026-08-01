@@ -1,0 +1,35 @@
+{
+  "name": "OrgUnit",
+  "type": "object",
+  "properties": {
+    "type": {
+      "type": "string",
+      "enum": [
+        "sector",
+        "department",
+        "division"
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "code": {
+      "type": "string"
+    },
+    "parent_id": {
+      "type": "string",
+      "description": "Parent org unit id (sector > department > division)"
+    },
+    "manager_id": {
+      "type": "string"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "type",
+    "name"
+  ]
+}

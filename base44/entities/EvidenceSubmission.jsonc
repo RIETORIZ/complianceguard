@@ -1,0 +1,128 @@
+{
+  "name": "EvidenceSubmission",
+  "type": "object",
+  "properties": {
+    "evidence_request_id": {
+      "type": "string"
+    },
+    "master_evidence_id": {
+      "type": "string",
+      "description": "Stable master id reused across versions"
+    },
+    "display_title": {
+      "type": "string",
+      "description": "Meaningful evidence title"
+    },
+    "original_file_name": {
+      "type": "string"
+    },
+    "file_url": {
+      "type": "string",
+      "description": "Uploaded file storage location"
+    },
+    "file_type": {
+      "type": "string"
+    },
+    "file_size": {
+      "type": "number"
+    },
+    "file_hash": {
+      "type": "string",
+      "description": "Integrity identifier"
+    },
+    "version": {
+      "type": "number",
+      "default": 1
+    },
+    "is_active_version": {
+      "type": "boolean",
+      "default": true
+    },
+    "upload_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "received_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "effective_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "review_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "expiry_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "approval_status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "approved",
+        "rejected"
+      ],
+      "default": "pending"
+    },
+    "confidentiality_classification": {
+      "type": "string",
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "default": "confidential"
+    },
+    "owner_id": {
+      "type": "string"
+    },
+    "uploaded_by_id": {
+      "type": "string"
+    },
+    "linked_audit_control_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Controls this evidence supports (reuse)"
+    },
+    "linked_evidence_request_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "checklist_completed": {
+      "type": "boolean",
+      "default": false
+    },
+    "checklist_results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "condition": {
+            "type": "string"
+          },
+          "passed": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "review_history": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "evidence_request_id",
+    "display_title"
+  ]
+}

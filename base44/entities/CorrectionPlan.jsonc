@@ -1,0 +1,92 @@
+{
+  "name": "CorrectionPlan",
+  "type": "object",
+  "properties": {
+    "corrective_action": {
+      "type": "string"
+    },
+    "finding_id": {
+      "type": "string"
+    },
+    "audit_id": {
+      "type": "string"
+    },
+    "control_id": {
+      "type": "string"
+    },
+    "primary_owner_id": {
+      "type": "string"
+    },
+    "supporting_owner_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "default": "medium"
+    },
+    "risk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "default": "medium"
+    },
+    "target_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "completion_percentage": {
+      "type": "number",
+      "default": 0
+    },
+    "required_closure_evidence": {
+      "type": "string"
+    },
+    "submitted_closure_evidence_url": {
+      "type": "string"
+    },
+    "validation_comments": {
+      "type": "string"
+    },
+    "escalation_level": {
+      "type": "number",
+      "default": 0
+    },
+    "closure_decision": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "validated",
+        "rejected",
+        "closed"
+      ],
+      "default": "pending"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "open",
+        "in_progress",
+        "validated",
+        "closed",
+        "overdue"
+      ],
+      "default": "open"
+    }
+  },
+  "required": [
+    "corrective_action"
+  ]
+}

@@ -1,0 +1,74 @@
+{
+  "name": "Notification",
+  "type": "object",
+  "properties": {
+    "recipient_id": {
+      "type": "string"
+    },
+    "recipient_email": {
+      "type": "string"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "email",
+        "in_app"
+      ],
+      "default": "in_app"
+    },
+    "delivery_mode": {
+      "type": "string",
+      "enum": [
+        "immediate",
+        "end_of_day"
+      ],
+      "default": "immediate"
+    },
+    "type": {
+      "type": "string",
+      "description": "e.g. new_evidence_request, upcoming_deadline, overdue, submission, rejection, revision_request, approval, evidence_expiration, finding, overdue_corrective_action, escalation"
+    },
+    "title": {
+      "type": "string"
+    },
+    "body": {
+      "type": "string"
+    },
+    "related_record_type": {
+      "type": "string"
+    },
+    "related_record_id": {
+      "type": "string"
+    },
+    "link": {
+      "type": "string"
+    },
+    "is_read": {
+      "type": "boolean",
+      "default": false
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "read_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "delivery_status": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "sent",
+        "delivered",
+        "failed",
+        "dev_logged"
+      ],
+      "default": "dev_logged"
+    }
+  },
+  "required": [
+    "title",
+    "type"
+  ]
+}

@@ -1,0 +1,75 @@
+{
+  "name": "Owner",
+  "type": "object",
+  "properties": {
+    "full_name": {
+      "type": "string"
+    },
+    "employee_number": {
+      "type": "string"
+    },
+    "job_title": {
+      "type": "string"
+    },
+    "work_email": {
+      "type": "string"
+    },
+    "phone": {
+      "type": "string"
+    },
+    "sector_id": {
+      "type": "string"
+    },
+    "department_id": {
+      "type": "string"
+    },
+    "division_id": {
+      "type": "string"
+    },
+    "manager_id": {
+      "type": "string",
+      "description": "Manager owner id"
+    },
+    "group_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assigned_sites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assigned_systems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assigned_controls": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assigned_evidence_requests": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "is_primary_accountable": {
+      "type": "boolean",
+      "default": false
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "full_name"
+  ]
+}

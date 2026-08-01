@@ -1,0 +1,173 @@
+{
+  "name": "EvidenceRequest",
+  "type": "object",
+  "properties": {
+    "audit_id": {
+      "type": "string"
+    },
+    "audit_control_id": {
+      "type": "string"
+    },
+    "control_id": {
+      "type": "string"
+    },
+    "framework_id": {
+      "type": "string"
+    },
+    "expected_evidence_id": {
+      "type": "string"
+    },
+    "evidence_type": {
+      "type": "string"
+    },
+    "title": {
+      "type": "string",
+      "description": "Meaningful evidence title"
+    },
+    "description": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Requested",
+        "Received",
+        "Partially Received",
+        "Require Further Comments",
+        "Not Applicable",
+        "Not Available",
+        "Overdue"
+      ],
+      "default": "Requested"
+    },
+    "request_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "requesting_user_id": {
+      "type": "string"
+    },
+    "assigned_owner_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assigned_group_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "assigned_sector_id": {
+      "type": "string"
+    },
+    "assigned_department_id": {
+      "type": "string"
+    },
+    "assigned_division_id": {
+      "type": "string"
+    },
+    "notification_method": {
+      "type": "string",
+      "enum": [
+        "immediate",
+        "end_of_day",
+        "both",
+        "none"
+      ],
+      "default": "immediate"
+    },
+    "submission_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "received_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "review_status": {
+      "type": "string",
+      "enum": [
+        "awaiting_review",
+        "accepted",
+        "accepted_with_observation",
+        "rejected",
+        "clarification_requested",
+        "further_comments_requested",
+        "corrected_file_requested",
+        "updated_evidence_requested",
+        "formal_approval_requested",
+        "partially_sufficient"
+      ],
+      "default": "awaiting_review"
+    },
+    "review_comments": {
+      "type": "string"
+    },
+    "rejection_reason": {
+      "type": "string"
+    },
+    "acceptance_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "rejection_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "resubmission_count": {
+      "type": "number",
+      "default": 0
+    },
+    "exclude_from_overdue": {
+      "type": "boolean",
+      "default": false
+    },
+    "status_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "changed_by": {
+            "type": "string"
+          },
+          "changed_at": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "audit_id",
+    "title"
+  ]
+}

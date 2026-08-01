@@ -1,0 +1,64 @@
+{
+  "name": "AuditControl",
+  "type": "object",
+  "properties": {
+    "audit_id": {
+      "type": "string"
+    },
+    "control_id": {
+      "type": "string"
+    },
+    "framework_id": {
+      "type": "string"
+    },
+    "domain_id": {
+      "type": "string"
+    },
+    "control_number": {
+      "type": "string"
+    },
+    "control_title": {
+      "type": "string"
+    },
+    "compliance_status": {
+      "type": "string",
+      "enum": [
+        "Under Evaluation",
+        "Implemented",
+        "Partially Implemented",
+        "Not Implemented",
+        "Not Applicable"
+      ],
+      "default": "Under Evaluation"
+    },
+    "control_level_owners": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "due_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "auditor_comments": {
+      "type": "string"
+    },
+    "is_closed": {
+      "type": "boolean",
+      "default": false
+    },
+    "closure_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "order": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "audit_id",
+    "control_id"
+  ]
+}

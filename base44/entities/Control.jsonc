@@ -1,0 +1,78 @@
+{
+  "name": "Control",
+  "type": "object",
+  "properties": {
+    "framework_id": {
+      "type": "string"
+    },
+    "domain_id": {
+      "type": "string"
+    },
+    "parent_id": {
+      "type": "string",
+      "description": "Parent control for sub-control hierarchy"
+    },
+    "control_number": {
+      "type": "string",
+      "description": "e.g. 1-X-X"
+    },
+    "title": {
+      "type": "string"
+    },
+    "official_text": {
+      "type": "string",
+      "description": "Protected official regulatory wording - never overwritten"
+    },
+    "internal_notes": {
+      "type": "string"
+    },
+    "implementation_guidance": {
+      "type": "string"
+    },
+    "additional_requirements": {
+      "type": "string"
+    },
+    "control_type": {
+      "type": "string",
+      "enum": [
+        "regulatory",
+        "custom"
+      ],
+      "default": "regulatory"
+    },
+    "is_custom": {
+      "type": "boolean",
+      "default": false
+    },
+    "applicable_sites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "applicable_systems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "priority": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "default": "medium"
+    },
+    "active": {
+      "type": "boolean",
+      "default": true
+    }
+  },
+  "required": [
+    "framework_id",
+    "title"
+  ]
+}
