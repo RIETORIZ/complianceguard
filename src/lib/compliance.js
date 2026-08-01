@@ -102,7 +102,7 @@ export function computeOverdueStatus(req) {
 }
 
 // Immutable audit trail logging
-export async function logAudit({ action, recordType, recordId, recordName, previousValue, newValue, comment, reason }) {
+export async function logAudit({ action, recordType, recordId = "", recordName = "", previousValue = null, newValue = null, comment = "", reason = "" }) {
   try {
     const me = await safeGetCurrentUser();
     await base44.entities.AuditTrail.create({
@@ -128,25 +128,25 @@ export async function logAudit({ action, recordType, recordId, recordName, previ
 // Notification dispatch abstraction (dev adapter + in-app center)
 export async function dispatchNotification({ recipientId, recipientEmail, type, title, body, relatedRecordType, relatedRecordId, link, deliveryMode = "immediate" }) {
   try {
-    // In-app notification always created
-    await base44.entities.Notification.create({
-      recipient_id: recipientId || "",
-      recipient_email: recipientEmail || "",
-      channel: "in_app",
-      delivery_mode: deliveryMode,
-      type,
-      title,
-      body,
-      related_record_type: relatedRecordType || "",
-      related_record_id: relatedRecordId || "",
-      link: link || "",
-      is_read: false,
-      sent_at: new Date().toISOString(),
-      delivery_status: "dev_logged",
-    });
-    // Email adapter: dev mode logs; production adapter would send real email
-    if (recipientEmail) {
-      console.log(`[DEV EMAIL ${deliveryMode}] To: ${recipientEmail} | ${title} | ${body}`);
+    const modes = deliveryMode === "both" ? ["immediate", "end_of_day"] : deliveryMode === "none" ? ["in_app_only"] : [deliveryMode];
+    for (const mode of modes) {
+      const queued = mode === "end_of_day";
+      await base44.entities.Notification.create({
+        recipient_id: recipientId || "",
+        recipient_email: recipientEmail || "",
+        channel: "in_app",
+        delivery_mode: queued ? "end_of_day" : "immediate",
+        type,
+        title,
+        body,
+        related_record_type: relatedRecordType || "",
+        related_record_id: relatedRecordId || "",
+        link: link || "",
+        is_read: false,
+        sent_at: queued ? "" : new Date().toISOString(),
+        delivery_status: queued ? "queued" : "dev_logged",
+      });
+      if (recipientEmail && !queued && mode !== "in_app_only") console.log(`[DEV EMAIL immediate] To: ${recipientEmail} | ${title} | ${body}`);
     }
   } catch (e) {
     console.error("Notification dispatch failed", e);
