@@ -2,11 +2,10 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification } from "@/lib/compliance";
-import { Plus, Search, ShieldCheck, Calendar, MapPin, Upload, X } from "lucide-react";
+import { Plus, Search, Calendar, MapPin, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const AUDIT_TYPES = ["Self-Assessment", "External Regulatory Audit", "Corporate Compliance Assessment", "Internal Audit", "Technical Assessment", "Correction Plan"];
-const NCA_CODES = ["ECC", "DCC", "CSCC", "CCC", "TCC", "OTCC", "OSMACC"];
 
 export function CreateAuditModal({ open, onClose, onCreated }) {
   const [frameworks, setFrameworks] = useState([]);
@@ -22,55 +21,60 @@ export function CreateAuditModal({ open, onClose, onCreated }) {
   }, [open]);
 
   useEffect(() => {
-    // auto-generate audit name
     const fw = frameworks.find((f) => f.id === form.framework_id);
-    if (fw) {
-      const year = new Date().getFullYear();
-      if (fw.code === "OTCC" && form.site_ids.length > 0) {
-        // one audit per site handled on submit
-        setForm((p) => ({ ...p, audit_name: "" }));
-      } else {
-        setForm((p) => ({ ...p, audit_name: `${year} ${fw.code}` }));
-      }
-    }
-  }, [form.framework_id, form.site_ids, frameworks]);
+    if (!fw) return;
+    const year = new Date().getFullYear();
+    setForm((p) => ({ ...p, audit_name: `${year} ${fw.code}` }));
+  }, [form.framework_id, frameworks]);
+
+  const populateFrameworkControls = async (audit, framework) => {
+    if (!framework?.id) return;
+    const controls = await base44.entities.Control.filter({ framework_id: framework.id });
+    const topLevel = controls.filter((c) => !c.parent_id);
+    if (!topLevel.length) return;
+    await base44.entities.AuditControl.bulkCreate(topLevel.map((c, index) => ({
+      audit_id: audit.id,
+      control_id: c.id,
+      framework_id: c.framework_id,
+      domain_id: c.domain_id,
+      control_number: c.control_number,
+      control_title: c.title,
+      compliance_status: "Under Evaluation",
+      order: index,
+    })));
+  };
 
   const submit = async () => {
     const fw = frameworks.find((f) => f.id === form.framework_id);
-    if (!fw) return;
+    const flexibleType = ["Internal Audit", "Technical Assessment", "Correction Plan"].includes(form.audit_type);
+    if (!fw && !flexibleType) return alert("A regulatory framework is required for this audit type.");
     setCreating(true);
     const year = new Date().getFullYear();
     try {
-      if (fw.code === "OTCC" && form.site_ids.length > 0) {
+      if (fw?.code === "OTCC" && form.site_ids.length > 0) {
         // create one audit per selected site
         for (const sid of form.site_ids) {
           const site = sites.find((s) => s.id === sid);
-          const name = form.audit_name && !form.audit_name.includes("Plant")
-            ? `${year} OTCC – ${site?.name || sid}`
-            : `${year} OTCC – ${site?.name || sid}`;
+          const baseName = form.audit_name?.trim() || `${year} OTCC`;
+          const name = baseName.includes(site?.name || sid) ? baseName : `${baseName} – ${site?.name || sid}`;
           const audit = await base44.entities.Audit.create({
             name, audit_year: year, framework_id: fw.id, framework_code: fw.code,
             audit_type: form.audit_type, site_id: sid, status: "active",
             lead_auditor_id: form.lead_auditor_id, scope: form.scope,
             audit_level_owners: form.lead_auditor_id ? [form.lead_auditor_id] : [],
           });
+          await populateFrameworkControls(audit, fw);
           await logAudit({ action: "audit_created", recordType: "Audit", recordId: audit.id, recordName: name, newValue: audit });
         }
       } else {
         const audit = await base44.entities.Audit.create({
-          name: form.audit_name || `${year} ${fw.code}`, audit_year: year, framework_id: fw.id, framework_code: fw.code,
+          name: form.audit_name || `${year} ${fw?.code || form.audit_type}`, audit_year: year, framework_id: fw?.id || "", framework_code: fw?.code || "CUSTOM",
           audit_type: form.audit_type, site_id: form.site_ids[0] || "", status: "active",
           lead_auditor_id: form.lead_auditor_id, scope: form.scope,
           audit_level_owners: form.lead_auditor_id ? [form.lead_auditor_id] : [],
         });
         await logAudit({ action: "audit_created", recordType: "Audit", recordId: audit.id, recordName: audit.name, newValue: audit });
-        // auto-create audit controls from framework
-        const controls = await base44.entities.Control.filter({ framework_id: fw.id });
-        const acs = controls.filter((c) => !c.parent_id).map((c, i) => ({
-          audit_id: audit.id, control_id: c.id, framework_id: fw.id, domain_id: c.domain_id,
-          control_number: c.control_number, control_title: c.title, compliance_status: "Under Evaluation", order: i,
-        }));
-        if (acs.length > 0) await base44.entities.AuditControl.bulkCreate(acs);
+        await populateFrameworkControls(audit, fw);
         // notify lead auditor
         if (form.lead_auditor_id) {
           const owner = owners.find((o) => o.id === form.lead_auditor_id);
@@ -97,7 +101,7 @@ export function CreateAuditModal({ open, onClose, onCreated }) {
           <div>
             <label className="text-xs font-medium text-slate-600">Framework</label>
             <select value={form.framework_id} onChange={(e) => setForm((p) => ({ ...p, framework_id: e.target.value }))} className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-              <option value="">Select framework…</option>
+              <option value="">{["Internal Audit", "Technical Assessment", "Correction Plan"].includes(form.audit_type) ? "Custom / multiple frameworks" : "Select framework…"}</option>
               {frameworks.map((f) => <option key={f.id} value={f.id}>{f.code} — {f.name}</option>)}
             </select>
           </div>
@@ -140,7 +144,7 @@ export function CreateAuditModal({ open, onClose, onCreated }) {
         </div>
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
           <button onClick={onClose} className="text-sm text-slate-600 px-4 py-2">Cancel</button>
-          <button onClick={submit} disabled={creating || !form.framework_id} className="text-sm bg-slate-900 text-white px-4 py-2 rounded-lg disabled:opacity-50">{creating ? "Creating…" : "Create Audit"}</button>
+          <button onClick={submit} disabled={creating || (!["Internal Audit", "Technical Assessment", "Correction Plan"].includes(form.audit_type) && !form.framework_id)} className="text-sm bg-slate-900 text-white px-4 py-2 rounded-lg disabled:opacity-50">{creating ? "Creating…" : "Create Audit"}</button>
         </div>
       </div>
     </div>
