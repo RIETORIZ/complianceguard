@@ -11,7 +11,7 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "test": "vitest run",
-    "validate": "npm run build && npm run lint && npm run test"
+    "validate": "npm run typecheck && npm run build && npm run lint && npm run test"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.41",
