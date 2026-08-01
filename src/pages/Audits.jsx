@@ -107,7 +107,7 @@ export function CreateAuditModal({ open, onClose, onCreated }) {
           <div>
             <label className="text-xs font-medium text-slate-600">Audit Type</label>
             <select value={form.audit_type} onChange={(e) => setForm((p) => ({ ...p, audit_type: e.target.value }))} className="w-full mt-1 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-              {AUDIT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              {AUDIT_TYPES.filter((type) => type !== "Correction Plan").map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           {fw?.code === "OTCC" && (
@@ -155,6 +155,7 @@ export default function Audits() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("");
+  const [view, setView] = useState("ongoing");
   const [showCreate, setShowCreate] = useState(false);
 
   const load = async () => {
@@ -167,10 +168,13 @@ export default function Audits() {
   useEffect(() => { load(); }, []);
 
   const filtered = audits.filter((a) => {
+    if (a.audit_type === "Correction Plan") return false;
     if (search && !a.name?.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterType && a.audit_type !== filterType) return false;
+    if (view === "completed" && a.status !== "completed") return false;
+    if (view === "ongoing" && a.status === "completed") return false;
     return true;
-  });
+  }).sort((a, b) => a.audit_type.localeCompare(b.audit_type) || new Date(b.created_date) - new Date(a.created_date));
 
   const statusColor = { planned: "bg-slate-100 text-slate-700", active: "bg-blue-100 text-blue-700", in_review: "bg-amber-100 text-amber-700", completed: "bg-emerald-100 text-emerald-700", cancelled: "bg-red-100 text-red-700" };
 
@@ -188,6 +192,11 @@ export default function Audits() {
         </button>
       </div>
 
+      <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+        <button onClick={() => setView("ongoing")} className={cn("rounded-md px-4 py-1.5 text-sm font-medium", view === "ongoing" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50")}>Ongoing audits</button>
+        <button onClick={() => setView("completed")} className={cn("rounded-md px-4 py-1.5 text-sm font-medium", view === "completed" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50")}>Completed audits</button>
+      </div>
+
       <div className="flex gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -195,7 +204,7 @@ export default function Audits() {
         </div>
         <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
           <option value="">All types</option>
-          {AUDIT_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+          {AUDIT_TYPES.filter((type) => type !== "Correction Plan").map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
 

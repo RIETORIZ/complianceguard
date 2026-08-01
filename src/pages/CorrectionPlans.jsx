@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "@/lib/router";
 import { base44 } from "@/api/base44Client";
 import { logAudit, recordStatusTransition, dispatchNotification, SEVERITY_CONFIG } from "@/lib/compliance";
 import { CORRECTION_PLAN_STATUSES, normalizeCorrectionPlanStatus } from "@/lib/audit-workflow";
@@ -25,6 +26,13 @@ const STATUS_CONFIG = {
 };
 
 const CLOSURE_DECISIONS = ["Pending", "Verified", "Partially Verified", "Closure Evidence Rejected", "Technical Validation Required", "Risk Accepted", "Cancelled"];
+const AUDIT_STATUS_CONFIG = {
+  planned: { color: "bg-slate-100 text-slate-700", label: "Planned" },
+  active: { color: "bg-blue-100 text-blue-700", label: "Active" },
+  in_review: { color: "bg-amber-100 text-amber-700", label: "In Review" },
+  completed: { color: "bg-emerald-100 text-emerald-700", label: "Completed" },
+  cancelled: { color: "bg-red-100 text-red-700", label: "Cancelled" },
+};
 
 export default function CorrectionPlans() {
   const { user } = useAuth();
@@ -34,6 +42,7 @@ export default function CorrectionPlans() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [view, setView] = useState("ongoing");
   const [editing, setEditing] = useState(null);
 
   const load = async () => {
@@ -56,14 +65,22 @@ export default function CorrectionPlans() {
   useEffect(() => { load(); }, []);
   const ownerName = (id) => data.owners.find((owner) => owner.id === id)?.full_name || "—";
   const filtered = data.plans.filter((plan) => {
+    const normalizedStatus = normalizeCorrectionPlanStatus(plan.status);
     const matchesSearch = !search || [plan.corrective_action, plan.gap_description, plan.root_cause, plan.required_closure_evidence, plan.validation_comments].some((value) => value?.toLowerCase().includes(search.toLowerCase()));
-    return matchesSearch && (!status || normalizeCorrectionPlanStatus(plan.status) === status);
+    const matchesView = view === "completed" ? normalizedStatus === "Closed" : normalizedStatus !== "Closed";
+    return matchesSearch && matchesView && (!status || normalizedStatus === status);
   });
+  const correctionAudits = data.audits.filter((audit) => audit.audit_type === "Correction Plan" && (view === "completed" ? audit.status === "completed" : audit.status !== "completed")).sort((a, b) => new Date(b.created_date) - new Date(a.created_date));
   if (loading) return <Spinner />;
 
   return <div className="space-y-6 max-w-7xl mx-auto">
     <div className="flex justify-between items-start"><div><h1 className="text-2xl font-bold">Correction Plans</h1><p className="text-sm text-slate-500 mt-1">The same remediation, verification, reassessment, and closure workflow is used for every audit type.</p></div>{canVerify && <button onClick={() => setEditing({})} className="flex gap-2 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm"><Plus className="w-4 h-4" />New Action</button>}</div>
+    <div className="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+      <button onClick={() => setView("ongoing")} className={cn("rounded-md px-4 py-1.5 text-sm font-medium", view === "ongoing" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50")}>Ongoing correction plans</button>
+      <button onClick={() => setView("completed")} className={cn("rounded-md px-4 py-1.5 text-sm font-medium", view === "completed" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50")}>Completed correction plans</button>
+    </div>
     <div className="flex gap-2"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search actions, gaps, root causes, evidence, or comments…" className="w-full pl-9 pr-3 py-2 border rounded-lg text-sm" /></div><select value={status} onChange={(event) => setStatus(event.target.value)} className="border rounded-lg px-3 text-sm"><option value="">All statuses</option>{CORRECTION_PLAN_STATUSES.map((value) => <option key={value}>{value}</option>)}</select></div>
+    {correctionAudits.length > 0 && <div className="space-y-2"><h2 className="text-sm font-semibold text-slate-700">Correction plan audits</h2><div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">{correctionAudits.map((audit) => <Link key={audit.id} to={`/audits/${audit.id}`} className="rounded-xl border border-slate-200 bg-white p-4 hover:shadow-sm"><div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-slate-900">{audit.name}</div><div className="mt-1 text-xs text-slate-500">{audit.framework_code || "—"} · {audit.audit_year || "—"}</div></div><StatusBadge status={audit.status} config={AUDIT_STATUS_CONFIG} /></div></Link>)}</div></div>}
     <div className="bg-white border rounded-xl overflow-x-auto"><table className="w-full text-sm"><thead className="bg-slate-50"><tr>{["Corrective Action", "Primary / Supporting Owners", "Priority / Risk", "Target", "Progress", "Status", ""].map((header) => <th key={header} className="px-4 py-2 text-left font-medium text-slate-600">{header}</th>)}</tr></thead><tbody className="divide-y">{filtered.map((plan) => {
       const normalizedStatus = normalizeCorrectionPlanStatus(plan.status);
       return <tr key={plan.id} className="hover:bg-slate-50"><td className="px-4 py-3"><div className="font-medium">{plan.corrective_action}</div><div className="text-xs text-slate-400 max-w-md truncate">{plan.gap_description || plan.required_closure_evidence}</div></td><td className="px-4 py-3"><div>{ownerName(plan.primary_owner_id)}</div><div className="text-xs text-slate-400">{(plan.supporting_owner_ids || []).map(ownerName).join(", ")}</div></td><td className="px-4 py-3"><div className="flex gap-1"><span className={cn("text-xs px-2 py-0.5 rounded-full", SEVERITY_CONFIG[plan.priority])}>{plan.priority}</span><span className={cn("text-xs px-2 py-0.5 rounded-full", SEVERITY_CONFIG[plan.risk])}>{plan.risk}</span></div></td><td className="px-4 py-3">{plan.target_date || "—"}</td><td className="px-4 py-3"><div className="flex items-center gap-2"><div className="w-20 h-1.5 bg-slate-100 rounded-full"><div className="h-full bg-slate-700 rounded-full" style={{ width: `${Math.min(100, plan.completion_percentage || 0)}%` }} /></div><span className="text-xs">{plan.completion_percentage || 0}%</span></div></td><td className="px-4 py-3"><StatusBadge status={normalizedStatus} config={STATUS_CONFIG} /></td><td className="px-4 py-3">{canManage && <button onClick={() => setEditing({ ...plan, status: normalizedStatus, closure_decision: normalizeClosureDecision(plan.closure_decision) })} className="text-xs border px-2 py-1 rounded">Open</button>}</td></tr>;
