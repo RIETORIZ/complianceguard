@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { computeEvidenceMetrics, computeComplianceMetrics, computeOverdueStatus, EVIDENCE_STATUS_CONFIG, COMPLIANCE_STATUS_CONFIG, SEVERITY_CONFIG } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
-import { AlertTriangle, ArrowRight, CheckCircle2, ClipboardList, Clock, FileStack, Flag, ShieldCheck, TrendingUp, Users } from "lucide-react";
+import { ArrowRight, CheckCircle2, FileStack, Flag, ShieldCheck, TrendingUp } from "lucide-react";
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
