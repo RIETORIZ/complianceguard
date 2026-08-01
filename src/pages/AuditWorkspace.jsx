@@ -117,10 +117,10 @@ export default function AuditWorkspace() {
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 text-sm border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50"><Upload className="w-4 h-4" /> Import</button>
+          {canManageAudit && <div className="flex gap-2">
+            {["Internal Audit", "Technical Assessment", "Correction Plan"].includes(audit.audit_type) && <button onClick={() => setShowImport(true)} className="flex items-center gap-1.5 text-sm border border-slate-200 px-3 py-2 rounded-lg hover:bg-slate-50"><Upload className="w-4 h-4" /> Import</button>}
             <button onClick={() => setShowAddControl(true)} className="flex items-center gap-1.5 text-sm bg-slate-900 text-white px-3 py-2 rounded-lg"><Plus className="w-4 h-4" /> Add Control</button>
-          </div>
+          </div>}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-5 pt-4 border-t border-slate-100">
           <div><div className="text-[10px] uppercase text-slate-400 font-semibold">Controls</div><div className="text-lg font-semibold text-slate-900">{controls.length}</div></div>
@@ -159,10 +159,11 @@ export default function AuditWorkspace() {
                     </button>
                     {isExpanded && (
                       <ControlDetail audit={audit} auditControl={ac} requests={reqs} owners={owners}
-                        ownerName={ownerName} submissionsFor={submissionsFor}
+                        ownerName={ownerName} submissionsFor={submissionsFor} expectedEvidence={expectedEvidence} conditions={conditions} orgUnits={orgUnits} groups={groups}
+                        canManageAudit={canManageAudit} canSubmitEvidence={canSubmitEvidence} canReviewEvidence={canReviewEvidence}
                         onEvidenceSubmit={() => load()} onShowReview={(req) => setShowReview(req)}
                         onShowEvidence={(req) => setShowEvidence(req)}
-                        onUpdateCompliance={async (status) => {
+                                        onUpdateCompliance={async (status) => {
                           const prev = ac.compliance_status;
                           await base44.entities.AuditControl.update(ac.id, { compliance_status: status });
                           await logAudit({ action: "status_changed", recordType: "AuditControl", recordId: ac.id, recordName: ac.control_title, previousValue: prev, newValue: status, comment: "Compliance status updated by auditor" });
@@ -179,16 +180,16 @@ export default function AuditWorkspace() {
       </div>
 
       {/* Add control modal */}
-      {showAddControl && <AddControlModal onClose={() => setShowAddControl(false)} onAddCustom={addCustomControl} frameworkControls={frameworkControls.filter((c) => !c.parent_id && c.framework_id === audit.framework_id && !controls.find((x) => x.control_id === c.id))} onAddExisting={addFrameworkControl} />}
+      {showAddControl && <AddControlModal onClose={() => setShowAddControl(false)} onAddCustom={addCustomControl} frameworkControls={frameworkControls.filter((c) => !c.parent_id && (["Internal Audit", "Technical Assessment", "Correction Plan"].includes(audit.audit_type) || c.framework_id === audit.framework_id) && !controls.find((x) => x.control_id === c.id))} onAddExisting={addFrameworkControl} />}
 
       {/* Import modal */}
       {showImport && <ImportSpreadsheetModal auditId={id} audit={audit} owners={owners} onClose={() => setShowImport(false)} onDone={load} />}
 
       {/* Evidence upload modal */}
-      {showEvidence && <EvidenceUploadModal request={showEvidence} audit={audit} owners={owners} submissions={submissionsFor(showEvidence.id)} onClose={() => setShowEvidence(null)} onDone={load} />}
+      {showEvidence && <EvidenceUploadModal request={showEvidence} audit={audit} owners={owners} submissions={submissionsFor(showEvidence.id)} expected={expectedEvidence.find((e) => e.id === showEvidence.expected_evidence_id)} conditions={conditions.filter((c) => c.expected_evidence_id === showEvidence.expected_evidence_id && c.active !== false)} systems={systems} sites={sites} orgUnits={orgUnits} requests={requests} auditControls={controls} allSubmissions={submissions} onClose={() => setShowEvidence(null)} onDone={load} />}
 
       {/* Review modal */}
-      {showReview && <EvidenceReviewModal request={showReview} audit={audit} submission={submissionsFor(showReview.id)[0]} onClose={() => setShowReview(null)} onDone={load} owners={owners} />}
+      {showReview && <EvidenceReviewModal request={showReview} audit={audit} submission={submissionsFor(showReview.id)[0]} mappings={mappings} requests={requests} auditControls={controls} submissions={submissions} expectedEvidence={expectedEvidence} conditions={conditions} onClose={() => setShowReview(null)} onDone={load} owners={owners} />}
     </div>
   );
 }
