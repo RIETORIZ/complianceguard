@@ -1,0 +1,106 @@
+{
+  "name": "ComplianceSnapshot",
+  "type": "object",
+  "properties": {
+    "snapshot_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "scope_type": {
+      "type": "string",
+      "enum": [
+        "organization",
+        "framework",
+        "domain",
+        "site",
+        "department"
+      ]
+    },
+    "scope_id": {
+      "type": "string"
+    },
+    "scope_name": {
+      "type": "string"
+    },
+    "implemented": {
+      "type": "number",
+      "default": 0
+    },
+    "partially_implemented": {
+      "type": "number",
+      "default": 0
+    },
+    "not_implemented": {
+      "type": "number",
+      "default": 0
+    },
+    "under_evaluation": {
+      "type": "number",
+      "default": 0
+    },
+    "not_applicable": {
+      "type": "number",
+      "default": 0
+    },
+    "applicable_total": {
+      "type": "number",
+      "default": 0
+    },
+    "compliance_percentage": {
+      "type": "number",
+      "default": 0
+    }
+  },
+  "required": [
+    "snapshot_date",
+    "scope_type",
+    "scope_name"
+  ],
+  "rls": {
+    "create": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Administrator"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Compliance Officer"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "Auditor"
+          }
+        }
+      ]
+    },
+    "read": true,
+    "update": false,
+    "delete": {
+      "$or": [
+        {
+          "user_condition": {
+            "role": "admin"
+          }
+        },
+        {
+          "user_condition": {
+            "role": "System Administrator"
+          }
+        }
+      ]
+    }
+  }
+}
