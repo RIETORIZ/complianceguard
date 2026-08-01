@@ -1,199 +1,94 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { base44 } from "@/api/base44Client";
 import { logAudit } from "@/lib/compliance";
-import { FolderTree, ChevronRight, ChevronDown, Plus, FileText, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
+import { hasPermission } from "@/lib/access-control";
+import { ChevronDown, ChevronRight, FileText, FolderTree, Pencil, Plus, ShieldCheck, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NCA_FRAMEWORKS = [
-  { code: "ECC", name: "Essential Cybersecurity Controls", description: "Essential baseline cybersecurity controls" },
-  { code: "DCC", name: "Digital Cybersecurity Controls", description: "Digital cybersecurity controls framework" },
-  { code: "CSCC", name: "Critical Systems Cybersecurity Controls", description: "Controls for critical systems" },
-  { code: "CCC", name: "Cloud Cybersecurity Controls", description: "Cloud cybersecurity controls" },
-  { code: "TCC", name: "Telecom Cybersecurity Controls", description: "Telecommunications cybersecurity controls" },
-  { code: "OTCC", name: "Operational Technology Cybersecurity Controls", description: "OT cybersecurity controls (site-based)" },
-  { code: "OSMACC", name: "Open Source Management & Audit Cybersecurity Controls", description: "Open source management controls" },
-];
-
 export default function Frameworks() {
-  const [frameworks, setFrameworks] = useState([]);
-  const [domains, setDomains] = useState([]);
-  const [controls, setControls] = useState([]);
-  const [evidence, setEvidence] = useState([]);
-  const [conditions, setConditions] = useState([]);
-  const [expanded, setExpanded] = useState({});
+  const { user } = useAuth();
+  const canManage = hasPermission(user, "frameworks_manage");
+  const [data, setData] = useState({ frameworks: [], domains: [], controls: [], evidence: [], conditions: [] });
+  const [expanded, setExpanded] = useState(new Set());
+  const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showAddControl, setShowAddControl] = useState(null);
 
   const load = async () => {
     try {
-      const [f, d, c, e, con] = await Promise.all([
-        base44.entities.Framework.list("-created_date", 200),
-        base44.entities.Domain.list("-created_date", 500),
-        base44.entities.Control.list("-created_date", 500),
-        base44.entities.ExpectedEvidence.list("-created_date", 500),
-        base44.entities.EvidenceCondition.list("-created_date", 500),
+      const [frameworks, domains, controls, evidence, conditions] = await Promise.all([
+        base44.entities.Framework.list("code", 500), base44.entities.Domain.list("order", 2000), base44.entities.Control.list("control_number", 5000), base44.entities.ExpectedEvidence.list("order", 5000), base44.entities.EvidenceCondition.list("name", 10000),
       ]);
-      setFrameworks(f); setDomains(d); setControls(c); setEvidence(e); setConditions(con);
-    } catch (e) { console.error(e); }
+      setData({ frameworks, domains, controls, evidence, conditions });
+    } catch (error) { console.error(error); }
     finally { setLoading(false); }
   };
-
   useEffect(() => { load(); }, []);
+  const toggle = (id) => setExpanded((previous) => { const next = new Set(previous); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const done = () => { setModal(null); load(); };
+  if (loading) return <Spinner />;
 
-  const toggle = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
+  return <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="flex items-start justify-between gap-3"><div><h1 className="text-2xl font-bold text-slate-900">Framework Library</h1><p className="text-sm text-slate-500 mt-1">Framework → Domain → Subdomain → Control → Sub-control → Expected Evidence → Evidence Conditions.</p></div>{canManage && <button onClick={() => setModal({ type: "framework" })} className="flex gap-2 bg-slate-900 text-white px-3 py-2 rounded-lg text-sm"><Plus className="w-4 h-4" />Add Framework</button>}</div>
+    {!data.frameworks.length && <div className="bg-white border rounded-xl p-10 text-center"><FolderTree className="w-10 h-10 text-slate-300 mx-auto" /><p className="text-sm text-slate-500 mt-2">No frameworks configured.</p></div>}
+    <div className="space-y-3">{data.frameworks.map((framework) => <FrameworkNode key={framework.id} framework={framework} data={data} expanded={expanded} toggle={toggle} canManage={canManage} setModal={setModal} />)}</div>
+    {modal && <EntityModal action={modal} data={data} onClose={() => setModal(null)} onDone={done} />}
+  </div>;
+}
 
-  const controlsByDomain = (fwId, domId) => controls.filter((c) => c.framework_id === fwId && c.domain_id === domId && !c.parent_id);
-  const subControls = (cid) => controls.filter((c) => c.parent_id === cid);
-  const evidenceFor = (cid) => evidence.filter((e) => e.control_id === cid);
-  const conditionsFor = (eeId) => conditions.filter((c) => c.expected_evidence_id === eeId);
+function FrameworkNode({ framework, data, expanded, toggle, canManage, setModal }) {
+  const domains = data.domains.filter((domain) => domain.framework_id === framework.id && !domain.parent_id);
+  const open = expanded.has(framework.id);
+  return <div className="bg-white border rounded-xl overflow-hidden"><div className="flex items-center gap-2 p-4"><button onClick={() => toggle(framework.id)}>{open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button><div className="w-10 h-10 bg-slate-900 text-white rounded-lg flex items-center justify-center text-xs font-bold">{framework.code}</div><button onClick={() => toggle(framework.id)} className="text-left flex-1"><div className="font-semibold text-sm">{framework.name}</div><div className="text-xs text-slate-500">{framework.description} · version {framework.version || "—"}</div></button>{canManage && <><button title="Add domain" onClick={() => setModal({ type: "domain", frameworkId: framework.id })} className="p-2 hover:bg-slate-100 rounded"><Plus className="w-4 h-4" /></button><button title="Edit framework" onClick={() => setModal({ type: "framework", value: framework })} className="p-2 hover:bg-slate-100 rounded"><Pencil className="w-4 h-4" /></button></>}</div>{open && <div className="border-t pl-5 pb-3">{domains.map((domain) => <DomainNode key={domain.id} domain={domain} framework={framework} data={data} expanded={expanded} toggle={toggle} canManage={canManage} setModal={setModal} level={0} />)}{!domains.length && <div className="p-4 text-sm text-slate-400">No domains.</div>}</div>}</div>;
+}
 
-  const addCustomControl = async (fwId, domId, title, text) => {
-    if (!title) return;
-    const ctrl = await base44.entities.Control.create({
-      framework_id: fwId, domain_id: domId, title, official_text: text, control_type: "custom", is_custom: true, priority: "medium", active: true,
-    });
-    await logAudit({ action: "control_added", recordType: "Control", recordId: ctrl.id, recordName: title, newValue: ctrl });
-    setShowAddControl(null);
-    load();
+function DomainNode({ domain, framework, data, expanded, toggle, canManage, setModal, level }) {
+  const open = expanded.has(domain.id);
+  const children = data.domains.filter((candidate) => candidate.parent_id === domain.id);
+  const controls = data.controls.filter((control) => control.domain_id === domain.id && !control.parent_id);
+  return <div className="border-l border-slate-200" style={{ marginLeft: level * 14 }}><div className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50"><button onClick={() => toggle(domain.id)}>{open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}</button><button onClick={() => toggle(domain.id)} className="flex-1 text-left text-sm font-medium">{domain.code} {domain.name} <span className="text-xs text-slate-400">({controls.length} controls, {children.length} subdomains)</span></button>{canManage && <><button title="Add subdomain" onClick={() => setModal({ type: "domain", frameworkId: framework.id, parentId: domain.id })} className="p-1.5 hover:bg-slate-100 rounded"><Plus className="w-3.5 h-3.5" /></button><button title="Add custom control" onClick={() => setModal({ type: "control", frameworkId: framework.id, domainId: domain.id })} className="p-1.5 hover:bg-slate-100 rounded"><ShieldCheck className="w-3.5 h-3.5" /></button><button title="Edit domain" onClick={() => setModal({ type: "domain", frameworkId: framework.id, value: domain })} className="p-1.5 hover:bg-slate-100 rounded"><Pencil className="w-3.5 h-3.5" /></button></>}</div>{open && <div className="pl-4">{children.map((child) => <DomainNode key={child.id} domain={child} framework={framework} data={data} expanded={expanded} toggle={toggle} canManage={canManage} setModal={setModal} level={level + 1} />)}{controls.map((control) => <ControlNode key={control.id} control={control} data={data} expanded={expanded} toggle={toggle} canManage={canManage} setModal={setModal} level={0} />)}</div>}</div>;
+}
+
+function ControlNode({ control, data, expanded, toggle, canManage, setModal, level }) {
+  const open = expanded.has(control.id);
+  const children = data.controls.filter((candidate) => candidate.parent_id === control.id);
+  const evidence = data.evidence.filter((item) => item.control_id === control.id);
+  return <div className="border-l border-slate-100 ml-2" style={{ paddingLeft: level * 12 }}><div className="flex items-center gap-2 px-3 py-2 hover:bg-slate-50"><button onClick={() => toggle(control.id)}>{open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}</button><button onClick={() => toggle(control.id)} className="flex-1 text-left text-sm"><span className="font-mono text-xs text-slate-500 mr-2">{control.control_number}</span>{control.title}{control.is_custom && <span className="ml-2 text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">CUSTOM</span>}</button>{canManage && <><button title="Add sub-control" onClick={() => setModal({ type: "control", frameworkId: control.framework_id, domainId: control.domain_id, parentId: control.id })} className="p-1.5"><Plus className="w-3.5 h-3.5" /></button><button title="Add expected evidence" onClick={() => setModal({ type: "evidence", controlId: control.id, frameworkId: control.framework_id })} className="p-1.5"><FileText className="w-3.5 h-3.5" /></button><button title="Edit notes/guidance" onClick={() => setModal({ type: "control", value: control, frameworkId: control.framework_id, domainId: control.domain_id })} className="p-1.5"><Pencil className="w-3.5 h-3.5" /></button></>}</div>{open && <div className="pl-5 pb-2 space-y-2"><div className="bg-slate-50 rounded-lg p-3 text-sm"><div className="text-[10px] uppercase text-slate-400 font-semibold">{control.is_custom ? "Custom Requirement Text" : "Official Regulatory Text — Protected"}</div><div className="mt-1 whitespace-pre-wrap">{control.is_custom ? control.custom_requirement_text || "—" : control.official_text || "—"}</div></div>{control.internal_notes && <Info label="Internal notes" text={control.internal_notes} />}{control.implementation_guidance && <Info label="Implementation guidance" text={control.implementation_guidance} />}{control.additional_requirements && <Info label="Additional requirements" text={control.additional_requirements} />}{children.map((child) => <ControlNode key={child.id} control={child} data={data} expanded={expanded} toggle={toggle} canManage={canManage} setModal={setModal} level={level + 1} />)}{evidence.map((item) => <EvidenceNode key={item.id} evidence={item} conditions={data.conditions.filter((condition) => condition.expected_evidence_id === item.id)} canManage={canManage} setModal={setModal} />)}</div>}</div>;
+}
+
+function EvidenceNode({ evidence, conditions, canManage, setModal }) { return <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3"><div className="flex items-start gap-2"><FileText className="w-4 h-4 text-blue-600 mt-0.5" /><div className="flex-1"><div className="text-sm font-medium">{evidence.name} {evidence.is_mandatory ? <span className="text-red-500">*</span> : <span className="text-slate-400">optional</span>}</div><div className="text-xs text-slate-500">{evidence.description || "—"}</div><div className="text-[10px] text-slate-400 mt-1">Formats: {(evidence.accepted_formats || []).join(", ") || "not restricted"} · Validity: {evidence.validity_period_days || "—"} days · Approval: {evidence.requires_formal_approval ? "required" : "not required"} · Reuse: {evidence.allow_reuse === false ? "restricted" : "allowed"}</div></div>{canManage && <><button title="Add condition" onClick={() => setModal({ type: "condition", expectedId: evidence.id, controlId: evidence.control_id })}><Plus className="w-3.5 h-3.5" /></button><button title="Edit expected evidence" onClick={() => setModal({ type: "evidence", value: evidence, controlId: evidence.control_id, frameworkId: evidence.framework_id })}><Pencil className="w-3.5 h-3.5" /></button></>}</div>{conditions.length > 0 && <div className="mt-2 space-y-1">{conditions.map((condition) => <div key={condition.id} className={cn("flex items-center gap-2 text-xs", condition.active === false && "line-through text-slate-400")}><ShieldCheck className={cn("w-3 h-3", condition.is_mandatory ? "text-red-500" : "text-slate-400")} /><span className="flex-1">{condition.name}</span>{condition.common_rejection_reason && <span title={condition.common_rejection_reason} className="text-[10px] text-amber-700">rejection guidance</span>}{canManage && <button onClick={() => setModal({ type: "condition", value: condition, expectedId: evidence.id, controlId: evidence.control_id })}><Pencil className="w-3 h-3" /></button>}</div>)}</div>}</div>; }
+function Info({ label, text }) { return <div className="text-xs px-3"><strong>{label}:</strong> {text}</div>; }
+
+function EntityModal({ action, data, onClose, onDone }) {
+  const defaults = action.type === "framework" ? { code: "", name: "", description: "", authority: "NCA", version: "", active: true } : action.type === "domain" ? { name: "", code: "", description: "", order: 0, active: true } : action.type === "control" ? { title: "", control_number: "", custom_requirement_text: "", internal_notes: "", implementation_guidance: "", additional_requirements: "", priority: "medium", active: true } : action.type === "evidence" ? { name: "", evidence_type: "", description: "", is_mandatory: true, accepted_formats_text: "pdf,docx,xlsx,png,jpg", validity_period_days: 365, example: "", requires_formal_approval: false, allow_reuse: true, order: 0 } : { name: "", description: "", is_mandatory: true, accepted_formats_text: "", validity_period_days: "", example: "", common_rejection_reason: "", active: true };
+  const initial = { ...defaults, ...(action.value || {}) };
+  if (action.value?.accepted_formats) initial.accepted_formats_text = action.value.accepted_formats.join(",");
+  const [form, setForm] = useState(initial);
+  const [saving, setSaving] = useState(false);
+  const change = (key, value) => setForm((previous) => ({ ...previous, [key]: value }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      const entityName = { framework: "Framework", domain: "Domain", control: "Control", evidence: "ExpectedEvidence", condition: "EvidenceCondition" }[action.type];
+      let payload = { ...form };
+      delete payload.id; delete payload.created_date; delete payload.updated_date; delete payload.created_by_id; delete payload.is_sample; delete payload.accepted_formats_text;
+      if (action.type === "domain") payload = { ...payload, framework_id: action.frameworkId, parent_id: action.value?.parent_id || action.parentId || "" };
+      if (action.type === "control") payload = { ...payload, framework_id: action.frameworkId, domain_id: action.domainId, parent_id: action.value?.parent_id || action.parentId || "", official_text: action.value?.official_text || "", control_type: action.value?.control_type || "custom", is_custom: action.value?.is_custom ?? true };
+      if (action.type === "evidence") payload = { ...payload, control_id: action.controlId, framework_id: action.frameworkId, accepted_formats: form.accepted_formats_text.split(",").map((value) => value.trim().replace(".", "")).filter(Boolean), validity_period_days: Number(form.validity_period_days) || 0 };
+      if (action.type === "condition") payload = { ...payload, expected_evidence_id: action.expectedId, control_id: action.controlId, accepted_formats: form.accepted_formats_text.split(",").map((value) => value.trim().replace(".", "")).filter(Boolean), validity_period_days: Number(form.validity_period_days) || 0 };
+      const entity = base44.entities[entityName];
+      const record = action.value?.id ? await entity.update(action.value.id, payload) : await entity.create(payload);
+      await logAudit({ action: `${action.type}_${action.value?.id ? "updated" : "created"}`, recordType: entityName, recordId: record.id, recordName: form.name || form.title || form.code, previousValue: action.value || null, newValue: payload, comment: action.type === "condition" && payload.active === false ? "Condition retired; history retained" : "Requirement library change" });
+      onDone();
+    } catch (error) { alert(error.message); }
+    finally { setSaving(false); }
   };
-
-  if (loading) return <div className="flex items-center justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /></div>;
-
-  return (
-    <div className="space-y-6 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Framework Library</h1>
-        <p className="text-sm text-slate-500 mt-1">Hierarchical regulatory structure: Framework → Domain → Control → Sub-control → Expected Evidence → Evidence Conditions. Official regulatory wording is protected.</p>
-      </div>
-
-      {frameworks.length === 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
-          <FolderTree className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-500 text-sm">No frameworks seeded yet. Run the seed data from the Administration page.</p>
-        </div>
-      )}
-
-      <div className="space-y-3">
-        {frameworks.map((fw) => {
-          const fwDomains = domains.filter((d) => d.framework_id === fw.id && !d.parent_id);
-          return (
-            <div key={fw.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-              <button onClick={() => toggle(fw.id)} className="w-full flex items-center gap-3 p-4 hover:bg-slate-50">
-                {expanded[fw.id] ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                <div className="w-9 h-9 rounded-lg bg-slate-900 text-white flex items-center justify-center text-xs font-bold">{fw.code}</div>
-                <div className="text-left flex-1">
-                  <div className="font-semibold text-slate-900 text-sm">{fw.name}</div>
-                  <div className="text-xs text-slate-500">{fw.description}</div>
-                </div>
-                <span className="text-xs text-slate-400">{fwDomains.length} domains</span>
-              </button>
-              {expanded[fw.id] && (
-                <div className="pl-8 border-t border-slate-100">
-                  {fwDomains.map((dom) => (
-                    <DomainRow key={dom.id} domain={dom} frameworkId={fw.id}
-                      controls={controlsByDomain(fw.id, dom.id)} subControls={subControls}
-                      evidenceFor={evidenceFor} conditionsFor={conditionsFor}
-                      expanded={expanded} toggle={toggle}
-                      onAddControl={(title, text) => addCustomControl(fw.id, dom.id, title, text)} showAddControl={showAddControl === dom.id} setShowAddControl={setShowAddControl} />
-                  ))}
-                  {fwDomains.length === 0 && <div className="p-4 text-sm text-slate-400">No domains defined.</div>}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  const title = `${action.value ? "Edit" : "Add"} ${action.type.replace("_", " ")}`;
+  return <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl max-w-2xl w-full max-h-[92vh] overflow-y-auto"><div className="flex justify-between px-6 py-4 border-b"><h2 className="font-semibold capitalize">{title}</h2><button onClick={onClose}><X className="w-5 h-5" /></button></div><div className="p-6 space-y-3">{action.type === "framework" && <><Text label="Code" value={form.code} set={(value) => change("code", value)} /><Text label="Name" value={form.name} set={(value) => change("name", value)} /><TextArea label="Description" value={form.description} set={(value) => change("description", value)} /><div className="grid grid-cols-2 gap-2"><Text label="Authority" value={form.authority} set={(value) => change("authority", value)} /><Text label="Version" value={form.version} set={(value) => change("version", value)} /></div></>}{action.type === "domain" && <><Text label="Code" value={form.code} set={(value) => change("code", value)} /><Text label="Name" value={form.name} set={(value) => change("name", value)} /><TextArea label="Description" value={form.description} set={(value) => change("description", value)} /></>}{action.type === "control" && <><Text label="Control number" value={form.control_number} set={(value) => change("control_number", value)} /><Text label="Title" value={form.title} set={(value) => change("title", value)} />{form.is_custom && <TextArea label="Custom requirement text" value={form.custom_requirement_text} set={(value) => change("custom_requirement_text", value)} />}<TextArea label="Internal notes" value={form.internal_notes} set={(value) => change("internal_notes", value)} /><TextArea label="Implementation guidance" value={form.implementation_guidance} set={(value) => change("implementation_guidance", value)} /><TextArea label="Additional requirements" value={form.additional_requirements} set={(value) => change("additional_requirements", value)} /></>}{action.type === "evidence" && <><Text label="Name" value={form.name} set={(value) => change("name", value)} /><Text label="Evidence type" value={form.evidence_type} set={(value) => change("evidence_type", value)} /><TextArea label="Description" value={form.description} set={(value) => change("description", value)} /><div className="grid grid-cols-2 gap-2"><Text label="Accepted formats (comma-separated)" value={form.accepted_formats_text} set={(value) => change("accepted_formats_text", value)} /><NumberInput label="Validity period (days)" value={form.validity_period_days} set={(value) => change("validity_period_days", value)} /></div><TextArea label="Acceptable example" value={form.example} set={(value) => change("example", value)} /><Checks form={form} change={change} keys={[['is_mandatory','Mandatory evidence'],['requires_formal_approval','Formal approval required'],['allow_reuse','Allow reuse']]} /></>}{action.type === "condition" && <><Text label="Condition" value={form.name} set={(value) => change("name", value)} /><TextArea label="Description" value={form.description} set={(value) => change("description", value)} /><TextArea label="Acceptable example" value={form.example} set={(value) => change("example", value)} /><TextArea label="Common rejection reason" value={form.common_rejection_reason} set={(value) => change("common_rejection_reason", value)} /><Checks form={form} change={change} keys={[['is_mandatory','Mandatory condition'],['active','Active (clear to retire without deleting history)']]} /></>}<button onClick={save} disabled={saving || !(form.name || form.title || form.code)} className="w-full bg-slate-900 text-white py-2 rounded-lg text-sm disabled:opacity-50">{saving ? "Saving…" : "Save"}</button></div></div></div>;
 }
 
-function DomainRow({ domain, frameworkId, controls, subControls, evidenceFor, conditionsFor, expanded, toggle, onAddControl, showAddControl, setShowAddControl }) {
-  const [title, setTitle] = useState("");
-  const [text, setText] = useState("");
-  return (
-    <div className="border-l-2 border-slate-100 ml-2">
-      <button onClick={() => toggle(domain.id)} className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-slate-50">
-        {expanded[domain.id] ? <ChevronDown className="w-3.5 h-3.5 text-slate-400" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400" />}
-        <span className="font-medium text-sm text-slate-800">{domain.code || ""} {domain.name}</span>
-        <span className="text-xs text-slate-400">({controls.length})</span>
-      </button>
-      {expanded[domain.id] && (
-        <div className="pl-6 pb-2">
-          {controls.map((ctrl) => (
-            <ControlRow key={ctrl.id} control={ctrl} subControls={subControls} evidenceFor={evidenceFor} conditionsFor={conditionsFor} expanded={expanded} toggle={toggle} />
-          ))}
-          {showAddControl ? (
-            <div className="bg-slate-50 rounded-lg p-3 mt-2 space-y-2">
-              <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Custom control title" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5" />
-              <textarea value={text} onChange={(e) => setText(e.target.value)} placeholder="Control requirement text" className="w-full text-sm border border-slate-200 rounded-lg px-3 py-1.5 h-16" />
-              <div className="flex gap-2">
-                <button onClick={() => { onAddControl(title, text); setTitle(""); setText(""); }} className="text-xs bg-slate-900 text-white px-3 py-1.5 rounded-lg">Add control</button>
-                <button onClick={() => setShowAddControl(null)} className="text-xs text-slate-500 px-3 py-1.5">Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setShowAddControl(true)} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-900 mt-1 px-2 py-1">
-              <Plus className="w-3.5 h-3.5" /> Add custom control
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ControlRow({ control, subControls, evidenceFor, conditionsFor, expanded, toggle }) {
-  const subs = subControls(control.id);
-  const evs = evidenceFor(control.id);
-  return (
-    <div className="border-l-2 border-slate-100 ml-2">
-      <button onClick={() => toggle(control.id)} className="w-full flex items-start gap-2 px-4 py-2 hover:bg-slate-50 text-left">
-        {expanded[control.id] ? <ChevronDown className="w-3.5 h-3.5 text-slate-400 mt-0.5" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-400 mt-0.5" />}
-        <div className="flex-1 min-w-0">
-          <div className="text-sm text-slate-800 flex items-center gap-2">
-            <span className="font-mono text-xs text-slate-500">{control.control_number}</span>
-            {control.title}
-            {control.is_custom && <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">CUSTOM</span>}
-          </div>
-        </div>
-      </button>
-      {expanded[control.id] && (
-        <div className="pl-6 pb-2 space-y-2">
-          <div className="bg-slate-50 rounded-lg p-3 text-sm text-slate-600">
-            <div className="text-[10px] uppercase tracking-wide text-slate-400 mb-1 font-semibold">Official Regulatory Text (Protected)</div>
-            {control.official_text || "—"}
-          </div>
-          {control.internal_notes && <div className="text-xs text-slate-500 px-3"><span className="font-semibold">Notes:</span> {control.internal_notes}</div>}
-          {subs.map((sc) => (
-            <div key={sc.id} className="pl-4 border-l-2 border-slate-100">
-              <div className="text-sm text-slate-700"><span className="font-mono text-xs text-slate-500">{sc.control_number}</span> {sc.title}</div>
-            </div>
-          ))}
-          {evs.length > 0 && (
-            <div className="space-y-1.5">
-              <div className="text-[10px] uppercase tracking-wide text-slate-400 font-semibold px-3">Expected Evidence</div>
-              {evs.map((e) => (
-                <div key={e.id} className="bg-blue-50/50 border border-blue-100 rounded-lg p-2.5">
-                  <div className="text-sm font-medium text-slate-800 flex items-center gap-2"><FileText className="w-3.5 h-3.5 text-blue-500" />{e.name}</div>
-                  {e.description && <div className="text-xs text-slate-500 mt-0.5">{e.description}</div>}
-                  {conditionsFor(e.id).length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <div className="text-[10px] uppercase text-slate-400 font-semibold">Acceptance Conditions</div>
-                      {conditionsFor(e.id).map((c) => (
-                        <div key={c.id} className="flex items-center gap-2 text-xs text-slate-600">
-                          <ShieldCheck className={cn("w-3 h-3", c.is_mandatory ? "text-red-500" : "text-slate-400")} />
-                          {c.name}
-                          {!c.is_mandatory && <span className="text-[10px] text-slate-400">(optional)</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
+function Text({ label, value, set }) { return <label className="block text-xs font-medium text-slate-600">{label}<input value={value || ""} onChange={(event) => set(event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></label>; }
+function NumberInput({ label, value, set }) { return <label className="block text-xs font-medium text-slate-600">{label}<input type="number" value={value || 0} onChange={(event) => set(event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm" /></label>; }
+function TextArea({ label, value, set }) { return <label className="block text-xs font-medium text-slate-600">{label}<textarea value={value || ""} onChange={(event) => set(event.target.value)} className="w-full mt-1 border rounded-lg px-3 py-2 text-sm h-20" /></label>; }
+function Checks({ form, change, keys }) { return <div className="flex flex-wrap gap-4">{keys.map(([key, label]) => <label key={key} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!form[key]} onChange={(event) => change(key, event.target.checked)} />{label}</label>)}</div>; }
+function Spinner() { return <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-slate-200 border-t-slate-800 rounded-full animate-spin" /></div>; }
