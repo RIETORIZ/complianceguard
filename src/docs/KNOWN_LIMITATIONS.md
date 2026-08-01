@@ -38,9 +38,9 @@ Authentication is platform-managed. Production should connect enterprise SSO, MF
 
 Function and automation source is included under `base44/functions`. After application publication, administrators must verify the schedule activation, service-role permissions, logging and failure handling in the target Base44 environment.
 
-### 10. Dependency advisories
+### 10. Dependency maintenance
 
-The direct high-severity `xlsx` dependency was removed. Remaining moderate advisories are inherited through Base44/Vite development tooling. They should be reviewed when compatible platform/plugin updates are available; forced upgrades must not be applied without regression testing.
+The direct high-severity `xlsx` dependency and vulnerable unused packages were removed. React Router was replaced with a constrained same-origin SPA router because no available release cleared all active advisory ranges during validation. The final `npm audit` result is zero vulnerabilities. Dependency audits must remain part of every release gate.
 
 ### 11. Data retention and legal hold
 
