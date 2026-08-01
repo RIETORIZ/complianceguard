@@ -18,6 +18,7 @@ import CorrectionPlans from '@/pages/CorrectionPlans';
 import Notifications from '@/pages/Notifications';
 import Reports from '@/pages/Reports';
 import Admin from '@/pages/Admin';
+import EvidencePreview from '@/pages/EvidencePreview';
 import { Navigate } from 'react-router-dom';
 import Login from '@/pages/Login';
 import Register from '@/pages/Register';
@@ -67,6 +68,7 @@ const AuthenticatedApp = () => {
           <Route path="/correction-plans" element={<PermissionRoute permission="audits_view"><CorrectionPlans /></PermissionRoute>} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/reports" element={<PermissionRoute permission="reports_view"><Reports /></PermissionRoute>} />
+          <Route path="/evidence/:id" element={<EvidencePreview />} />
           <Route path="/admin" element={<PermissionRoute permission="admin_view"><Admin /></PermissionRoute>} />
         </Route>
       </Route>
