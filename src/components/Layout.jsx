@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from "react";
 import { Link, useLocation, useNavigate, Outlet } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
-import { LayoutDashboard, FileStack, FolderTree, Users, Flag, ClipboardList, Bell, FileText, Settings, ShieldCheck, LogOut, Menu, X, ChevronDown } from "lucide-react";
+import { LayoutDashboard, FolderTree, Users, Flag, ClipboardList, Bell, FileText, Settings, ShieldCheck, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { hasPermission, normalizeRole } from "@/lib/access-control";
 
 const NAV = [
-  { label: "Dashboard", path: "/", icon: LayoutDashboard },
-  { label: "Audits", path: "/audits", icon: ShieldCheck },
-  { label: "Frameworks", path: "/frameworks", icon: FolderTree },
-  { label: "Findings", path: "/findings", icon: Flag },
-  { label: "Correction Plans", path: "/correction-plans", icon: ClipboardList },
-  { label: "Owners", path: "/owners", icon: Users },
+  { label: "Dashboard", path: "/", icon: LayoutDashboard, permission: "dashboard_view" },
+  { label: "Audits", path: "/audits", icon: ShieldCheck, permission: "audits_view" },
+  { label: "Frameworks", path: "/frameworks", icon: FolderTree, permission: "frameworks_view" },
+  { label: "Findings", path: "/findings", icon: Flag, permission: "audits_view" },
+  { label: "Correction Plans", path: "/correction-plans", icon: ClipboardList, permission: "audits_view" },
+  { label: "Owners", path: "/owners", icon: Users, permission: "owners_view" },
   { label: "Notifications", path: "/notifications", icon: Bell },
-  { label: "Reports", path: "/reports", icon: FileText },
-  { label: "Administration", path: "/admin", icon: Settings },
+  { label: "Reports", path: "/reports", icon: FileText, permission: "reports_view" },
+  { label: "Administration", path: "/admin", icon: Settings, permission: "admin_view" },
 ];
 
 export default function Layout() {
@@ -61,7 +62,7 @@ export default function Layout() {
           </div>
         </div>
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.permission || hasPermission(user, item.permission)).map((item) => {
             const active = item.path === "/" ? location.pathname === "/" : location.pathname.startsWith(item.path);
             return (
               <Link
@@ -89,7 +90,7 @@ export default function Layout() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium text-slate-900 truncate">{user?.full_name || user?.email || "User"}</div>
-              <div className="text-[10px] text-slate-500 truncate">{user?.role || "user"}</div>
+              <div className="text-[10px] text-slate-500 truncate">{normalizeRole(user?.role)}</div>
             </div>
             <button onClick={handleLogout} className="text-slate-400 hover:text-slate-700" title="Sign out">
               <LogOut className="w-4 h-4" />
@@ -109,7 +110,7 @@ export default function Layout() {
               {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
             </button>
             <div className="text-base font-semibold text-slate-900">
-              {NAV.find((n) => n.path === "/" ? location.pathname === "/" : location.pathname.startsWith(n.path))?.label || "Compliance"}
+              {NAV.filter((n) => !n.permission || hasPermission(user, n.permission)).find((n) => n.path === "/" ? location.pathname === "/" : location.pathname.startsWith(n.path))?.label || "Compliance"}
             </div>
           </div>
           <Link to="/notifications" className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-lg">
