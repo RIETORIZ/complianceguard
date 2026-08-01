@@ -57,49 +57,7 @@ export const DEFAULT_EVIDENCE_CONDITIONS = [
   "Required configuration visible",
 ];
 
-// Detect non-meaningful file names (random gibberish)
-export function isFileNameMeaningful(fileName) {
-  if (!fileName) return false;
-  const base = fileName.replace(/\.[^/.]+$/, "");
-  // too short or too long random
-  if (base.length < 5) return false;
-  // low vowel ratio + high randomness heuristic
-  const vowels = (base.match(/[aeiouAEIOU]/g) || []).length;
-  const vowelRatio = vowels / base.length;
-  // counts consecutive consonant clusters > 4 as suspicious
-  const hasLongConsonantCluster = /[bcdfghjklmnpqrstvwxyz]{5,}/i.test(base);
-  // no spaces, low vowels, looks like random keysmash
-  if (base.length >= 15 && vowelRatio < 0.15 && hasLongConsonantCluster) return false;
-  if (hasLongConsonantCluster && vowelRatio < 0.2 && !base.includes(" ") && !base.includes("_") && !base.includes("-")) return false;
-  return true;
-}
-
-// Suggest a meaningful name from components
-export function suggestEvidenceName({ frameworkCode, controlNumber, evidenceType, system, date }) {
-  const parts = [];
-  if (frameworkCode) parts.push(frameworkCode);
-  if (controlNumber) parts.push(controlNumber.replace(/[^a-zA-Z0-9-]/g, "-"));
-  if (evidenceType) parts.push(evidenceType.replace(/[^a-zA-Z0-9]/g, "_"));
-  if (system) parts.push(system.replace(/[^a-zA-Z0-9]/g, "_"));
-  const dt = date || new Date().toISOString().slice(0, 4);
-  parts.push(dt);
-  return parts.join("_");
-}
-
-// Compute overdue status for an evidence request without mutating DB
-export function computeOverdueStatus(req) {
-  const closedStates = ["Received", "Not Applicable", "Not Available"];
-  if (req.exclude_from_overdue || closedStates.includes(req.status)) return req.status;
-  if (req.due_date) {
-    const due = new Date(req.due_date);
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    if (due < now && !["Received", "Partially Received"].includes(req.status)) {
-      return "Overdue";
-    }
-  }
-  return req.status;
-}
+export { isFileNameMeaningful, suggestEvidenceName, computeOverdueStatus, computeEvidenceMetrics, computeComplianceMetrics, evidenceValidityStatus } from "./compliance-core";
 
 // Immutable audit trail logging
 export async function logAudit({ action, recordType, recordId = "", recordName = "", previousValue = null, newValue = null, comment = "", reason = "" }) {
@@ -161,32 +119,3 @@ async function safeGetCurrentUser() {
   }
 }
 
-// Compute dashboard metrics from raw records (no hardcoded values)
-export function computeEvidenceMetrics(requests) {
-  const counts = { Requested: 0, Received: 0, "Partially Received": 0, "Require Further Comments": 0, "Not Applicable": 0, "Not Available": 0, Overdue: 0, awaiting_review: 0, accepted: 0, rejected: 0, expiring_soon: 0 };
-  const now = new Date();
-  requests.forEach((r) => {
-    const status = computeOverdueStatus(r);
-    if (counts[status] !== undefined) counts[status]++;
-    if (r.review_status === "awaiting_review" && (status === "Received" || status === "Partially Received")) counts.awaiting_review++;
-    if (r.review_status === "accepted" || r.review_status === "accepted_with_observation") counts.accepted++;
-    if (r.review_status === "rejected") counts.rejected++;
-  });
-  return counts;
-}
-
-export function computeComplianceMetrics(controls) {
-  const counts = { "Under Evaluation": 0, "Implemented": 0, "Partially Implemented": 0, "Not Implemented": 0, "Not Applicable": 0 };
-  let total = 0;
-  let implemented = 0;
-  controls.forEach((c) => {
-    if (counts[c.compliance_status] !== undefined) counts[c.compliance_status]++;
-    if (c.compliance_status !== "Not Applicable") {
-      total++;
-      if (c.compliance_status === "Implemented") implemented++;
-      else if (c.compliance_status === "Partially Implemented") implemented += 0.5;
-    }
-  });
-  const percentage = total > 0 ? Math.round((implemented / total) * 100) : 0;
-  return { counts, percentage, total };
-}
