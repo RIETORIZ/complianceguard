@@ -29,10 +29,18 @@
       "type": "string",
       "enum": [
         "pending",
+        "awaiting_review",
         "accepted",
         "accepted_with_observation",
         "rejected",
-        "partially_sufficient"
+        "partially_sufficient",
+        "clarification_requested",
+        "further_comments_requested",
+        "corrected_file_requested",
+        "updated_evidence_requested",
+        "formal_approval_requested",
+        "expired",
+        "superseded"
       ],
       "default": "pending"
     },
@@ -49,13 +57,42 @@
     "created_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "review_decision": {
+      "type": "string",
+      "enum": [
+        "Pending Review",
+        "Accepted",
+        "Accepted with Observation",
+        "Partially Sufficient",
+        "Revision Required",
+        "Rejected",
+        "Expired",
+        "Superseded"
+      ],
+      "default": "Pending Review",
+      "description": "Canonical evidence review decision. Kept separate from request and compliance status."
+    },
+    "mapping_status": {
+      "type": "string",
+      "enum": [
+        "Pending",
+        "Active",
+        "Revision Required",
+        "Rejected",
+        "Expired",
+        "Superseded"
+      ],
+      "default": "Pending",
+      "description": "Lifecycle of this evidence-to-control mapping, separate from the auditor review decision."
     }
   },
   "required": [
     "master_evidence_id",
     "evidence_submission_id",
     "evidence_request_id",
-    "audit_control_id"
+    "audit_control_id",
+    "mapping_status"
   ],
   "rls": {
     "create": {

@@ -11,7 +11,8 @@
     "typecheck": "tsc -p ./jsconfig.json",
     "preview": "vite preview",
     "test": "vitest run",
-    "validate": "npm run typecheck && npm run build && npm run lint && npm run test"
+    "validate": "npm run validate:workflow && npm run typecheck && npm run build && npm run lint && npm run test",
+    "validate:workflow": "node scripts/validate-unified-workflow.mjs"
   },
   "dependencies": {
     "@base44/sdk": "^0.8.41",

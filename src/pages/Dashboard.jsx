@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link } from "@/lib/router";
 import { motion } from "framer-motion";
 import { base44 } from "@/api/base44Client";
@@ -10,6 +10,7 @@ import {
   COMPLIANCE_STATUS_CONFIG,
 } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
+import { isOpenFindingStatus, isClosedCorrectionPlanStatus, normalizeCorrectionPlanStatus } from "@/lib/audit-workflow";
 import {
   ArrowRight,
   CheckCircle2,
@@ -121,15 +122,15 @@ export default function Dashboard() {
       (s.expiry_date && daysUntil(s.expiry_date) >= 0 && daysUntil(s.expiry_date) <= 30)
   ).length;
   const complianceMetrics = computeComplianceMetrics(controls);
-  const openFindings = findings.filter((f) => !["verified_closed", "accepted"].includes(f.status));
+  const openFindings = findings.filter((finding) => isOpenFindingStatus(finding.status));
   const overduePlans = plans.filter(
-    (p) => p.status === "overdue" || (p.target_date && daysUntil(p.target_date) < 0 && p.status !== "closed")
+    (plan) => normalizeCorrectionPlanStatus(plan.status) === "Overdue" || (plan.target_date && daysUntil(plan.target_date) < 0 && !isClosedCorrectionPlanStatus(plan.status))
   );
   const dueSoonPlans = plans.filter(
-    (p) => p.status !== "closed" && p.target_date && daysUntil(p.target_date) >= 0 && daysUntil(p.target_date) <= 7
+    (plan) => !isClosedCorrectionPlanStatus(plan.status) && plan.target_date && daysUntil(plan.target_date) >= 0 && daysUntil(plan.target_date) <= 7
   );
   const closedRate = plans.length
-    ? Math.round((plans.filter((p) => p.status === "closed").length / plans.length) * 100)
+    ? Math.round((plans.filter((plan) => isClosedCorrectionPlanStatus(plan.status)).length / plans.length) * 100)
     : 0;
   const today = new Date().toISOString().slice(0, 10);
   const receivedToday = requests.filter((r) => r.received_date?.slice(0, 10) === today).length;
@@ -403,7 +404,7 @@ export default function Dashboard() {
         <Section title="Corrective Actions" to="/correction-plans" delay={0.15}>
           <div className="space-y-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <MiniStat icon={Clock} label="Open" value={plans.filter((p) => p.status !== "closed").length} color="text-indigo-600 bg-indigo-50" />
+              <MiniStat icon={Clock} label="Open" value={plans.filter((plan) => !isClosedCorrectionPlanStatus(plan.status)).length} color="text-indigo-600 bg-indigo-50" />
               <MiniStat icon={AlertTriangle} label="Overdue" value={overduePlans.length} color="text-red-600 bg-red-50" />
               <MiniStat icon={Clock} label="Due ≤ 7d" value={dueSoonPlans.length} color="text-amber-600 bg-amber-50" />
               <MiniStat icon={CheckCircle2} label="Closed rate" value={`${closedRate}%`} color="text-emerald-600 bg-emerald-50" />

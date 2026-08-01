@@ -32,10 +32,17 @@ export function computeEvidenceMetrics(requests) {
   const counts = { Requested: 0, Received: 0, "Partially Received": 0, "Require Further Comments": 0, "Not Applicable": 0, "Not Available": 0, Overdue: 0, awaiting_review: 0, accepted: 0, rejected: 0, expiring_soon: 0 };
   requests.forEach((request) => {
     const status = computeOverdueStatus(request);
+    const decision = request.review_decision || request.review_status || "Pending Review";
+    const normalized = {
+      awaiting_review: "Pending Review",
+      accepted: "Accepted",
+      accepted_with_observation: "Accepted with Observation",
+      rejected: "Rejected",
+    }[decision] || decision;
     if (counts[status] !== undefined) counts[status] += 1;
-    if (request.review_status === "awaiting_review" && ["Received", "Partially Received"].includes(status)) counts.awaiting_review += 1;
-    if (["accepted", "accepted_with_observation"].includes(request.review_status)) counts.accepted += 1;
-    if (request.review_status === "rejected") counts.rejected += 1;
+    if (normalized === "Pending Review" && ["Received", "Partially Received"].includes(status)) counts.awaiting_review += 1;
+    if (["Accepted", "Accepted with Observation"].includes(normalized)) counts.accepted += 1;
+    if (normalized === "Rejected") counts.rejected += 1;
   });
   return counts;
 }

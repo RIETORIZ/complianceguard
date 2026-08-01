@@ -1,0 +1,4 @@
+{
+  "name": "migrate-unified-audit-workflow",
+  "entry": "index.ts"
+}

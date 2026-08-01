@@ -280,6 +280,21 @@
         "failed"
       ],
       "default": "not_scanned"
+    },
+    "review_decision": {
+      "type": "string",
+      "enum": [
+        "Pending Review",
+        "Accepted",
+        "Accepted with Observation",
+        "Partially Sufficient",
+        "Revision Required",
+        "Rejected",
+        "Expired",
+        "Superseded"
+      ],
+      "default": "Pending Review",
+      "description": "Canonical evidence review decision. Kept separate from request and compliance status."
     }
   },
   "required": [

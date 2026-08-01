@@ -136,14 +136,14 @@ export function ImportSpreadsheetModal({ auditId, audit, owners, onClose, onDone
         if (conditionItems.length) await base44.entities.EvidenceCondition.bulkCreate(conditionItems.map((name) => ({ expected_evidence_id: expected.id, control_id: ctrl.id, name, is_mandatory: true, active: true })));
         const request = await base44.entities.EvidenceRequest.create({
           audit_id: auditId, audit_control_id: auditControl.id, control_id: ctrl.id, framework_id: audit.framework_id || "", expected_evidence_id: expected.id,
-          title: evidenceName, evidence_type: "Imported", status: "Requested", review_status: "awaiting_review",
+          title: evidenceName, evidence_type: "Imported", status: "Requested", review_decision: "Pending Review", review_status: "awaiting_review",
           request_date: new Date().toISOString().slice(0, 10), due_date: mapping.due_date ? String(row[mapping.due_date] || "") : "",
           assigned_owner_ids: owner ? [owner.id] : [], assigned_department_id: department?.id || "", notification_method: "immediate",
           status_history: [{ status: "Requested", changed_by: "import", changed_at: new Date().toISOString(), comment: `Imported from ${file?.name}` }],
         });
         if (owner) await dispatchNotification({ recipientId: owner.id, recipientEmail: owner.work_email, type: "new_evidence_request", title: `Imported evidence request: ${evidenceName}`, body: `${audit.name} — ${title}`, relatedRecordType: "EvidenceRequest", relatedRecordId: request.id, link: `/audits/${auditId}` });
         const correctiveAction = mapping.corrective_action ? String(row[mapping.corrective_action] || "").trim() : "";
-        if (correctiveAction) await base44.entities.CorrectionPlan.create({ corrective_action: correctiveAction, audit_id: auditId, control_id: ctrl.id, primary_owner_id: owner?.id || "", priority, risk: severity, target_date: mapping.due_date ? String(row[mapping.due_date] || "") : "", completion_percentage: 0, required_closure_evidence: evidenceName, status: "open", closure_decision: "pending" });
+        if (correctiveAction) await base44.entities.CorrectionPlan.create({ corrective_action: correctiveAction, audit_id: auditId, control_id: ctrl.id, primary_owner_id: owner?.id || "", priority, risk: severity, target_date: mapping.due_date ? String(row[mapping.due_date] || "") : "", completion_percentage: 0, required_closure_evidence: evidenceName, status: "Awaiting Owner Response", closure_decision: "Pending" });
         created += 1;
       }
       await logAudit({ action: "spreadsheet_import", recordType: "Audit", recordId: auditId, recordName: audit.name, comment: `Imported ${created} validated rows from ${file?.name}`, newValue: { rows: created, mapping } });

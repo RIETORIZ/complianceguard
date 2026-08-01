@@ -21,7 +21,8 @@
         "Technical Assessment",
         "Evidence Review",
         "Risk Assessment",
-        "Control Testing"
+        "Control Testing",
+        "Continuous Compliance Monitoring"
       ],
       "default": "Evidence Review"
     },
@@ -85,19 +86,30 @@
     "status": {
       "type": "string",
       "enum": [
-        "open",
-        "in_progress",
-        "remediated",
-        "verified_closed",
-        "accepted"
+        "Draft",
+        "Open",
+        "Management Response Required",
+        "Correction Plan Required",
+        "Under Remediation",
+        "Pending Verification",
+        "Closed",
+        "Risk Accepted",
+        "Cancelled"
       ],
-      "default": "open"
+      "default": "Draft"
     },
     "status_history": {
       "type": "array",
       "items": {
         "type": "object"
       }
+    },
+    "cancellation_reason": {
+      "type": "string"
+    },
+    "risk_acceptance_expiry": {
+      "type": "string",
+      "format": "date"
     }
   },
   "required": [
