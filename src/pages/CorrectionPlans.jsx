@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { base44 } from "@/api/base44Client";
 import { logAudit, SEVERITY_CONFIG } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
-import { Search, ClipboardList, X, CheckCircle2 } from "lucide-react";
+import { Search, X, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_CONFIG = {

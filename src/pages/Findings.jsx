@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { SEVERITY_CONFIG } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
-import { Search, Flag, Plus, X } from "lucide-react";
+import { Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const STATUS_CONFIG = {

@@ -4,7 +4,7 @@ import { base44 } from "@/api/base44Client";
 import { logAudit, dispatchNotification, computeOverdueStatus, EVIDENCE_STATUS_CONFIG, COMPLIANCE_STATUS_CONFIG, REVIEW_STATUS_CONFIG, isFileNameMeaningful, suggestEvidenceName, DEFAULT_EVIDENCE_CONDITIONS } from "@/lib/compliance";
 import { StatusBadge } from "@/components/compliance/StatusBadge";
 import { ImportSpreadsheetModal } from "@/components/ImportSpreadsheetModal";
-import { ChevronRight, Plus, Upload, X, FileText, Link2, CheckCircle2, AlertTriangle, Clock, MessageSquare, FileX, RefreshCw, ShieldCheck, History } from "lucide-react";
+import { ChevronRight, Plus, Upload, X, FileText, Link2, CheckCircle2, AlertTriangle, MessageSquare, FileX, RefreshCw, ShieldCheck, History } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function AuditWorkspace() {

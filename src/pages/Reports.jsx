@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
 import { base44 } from "@/api/base44Client";
 import { logAudit, computeOverdueStatus } from "@/lib/compliance";
-import { FileText, Download, Database, History, Play, AlertTriangle, CheckCircle2, ShieldCheck, Lock, FileCode } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FileText, Download, Database } from "lucide-react";
 
 export default function Reports() {
   const [audits, setAudits] = useState([]);
