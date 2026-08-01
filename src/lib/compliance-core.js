@@ -58,6 +58,6 @@ export function evidenceValidityStatus(expiryDate, now = new Date()) {
   if (!expiryDate) return "Under Review";
   const expiry = new Date(`${expiryDate}T23:59:59`);
   if (expiry < now) return "Expired";
-  const days = (expiry - now) / 86400000;
+  const days = (expiry.getTime() - now.getTime()) / 86400000;
   return days <= 30 ? "Expiring Soon" : "Valid";
 }
