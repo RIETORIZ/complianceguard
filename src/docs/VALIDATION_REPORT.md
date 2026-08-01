@@ -26,19 +26,22 @@ These issues were treated as defects and remediated.
 Current commands:
 
 ```bash
+npm run typecheck
 npm run build
 npm run lint
 npm run test
 npm run validate
+npm audit
 ```
 
 Latest verified state during remediation:
 
 - Vite production build: **pass**
 - ESLint error gate: **pass**
-- Vitest: **14 tests expected after final suite update**; rerun required after documentation stage
+- JavaScript type checking (`tsc -p jsconfig.json`): **pass**
+- Vitest: **14/14 tests pass**
 - Direct high/critical dependency advisory introduced by `xlsx`: **removed**
-- Remaining dependency advisories: moderate transitive Base44/Vite development-tooling advisories, documented in known limitations
+- Final dependency audit: **0 vulnerabilities**
 
 ## Scenario Validation
 
